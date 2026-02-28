@@ -15,6 +15,7 @@ export function NodePropertiesPanel() {
   const deleteNode = useTreeEditorStore((s) => s.deleteNode);
   const setRootNode = useTreeEditorStore((s) => s.setRootNode);
   const renameOption = useTreeEditorStore((s) => s.renameOption);
+  const removeOptionEdge = useTreeEditorStore((s) => s.removeOptionEdge);
   const viewMode = useTreeEditorStore((s) => s.viewMode);
 
   if (!selectedNodeId) return null;
@@ -140,8 +141,12 @@ export function NodePropertiesPanel() {
                         />
                         <button
                           onClick={() => {
+                            const removedOpt = (data.options || [])[idx];
                             const newOptions = (data.options || []).filter((_, i) => i !== idx);
                             updateNodeData(selectedNodeId, { options: newOptions });
+                            if (removedOpt) {
+                              removeOptionEdge(selectedNodeId, removedOpt);
+                            }
                           }}
                           className="text-[#666] hover:text-red-400"
                         >

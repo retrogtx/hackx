@@ -54,17 +54,19 @@ export function QuestionNode({ data, selected }: NodeProps<QuestionNodeType>) {
 
       <div className="flex justify-around px-2 pb-2">
         {options.length > 0 ? (
-          options.map((opt) => (
-            <div key={opt} className="flex flex-col items-center">
-              <span className="text-[10px] text-[#a1a1a1] mb-1">{opt}</span>
-              <Handle
-                type="source"
-                position={Position.Bottom}
-                id={`answer-${opt}`}
-                className="!relative !transform-none !w-2.5 !h-2.5 !bg-[#00d4aa] !border-[#0a0a0a] !border-2"
-              />
-            </div>
-          ))
+          options
+            .filter((o, i, arr) => o.trim() !== "" && arr.findIndex((v) => v.trim() === o.trim()) === i)
+            .map((opt) => (
+              <div key={`answer-${opt.trim()}`} className="flex flex-col items-center">
+                <span className="text-[10px] text-[#a1a1a1] mb-1">{opt.trim()}</span>
+                <Handle
+                  type="source"
+                  position={Position.Bottom}
+                  id={`answer-${opt.trim()}`}
+                  className="!relative !transform-none !w-2.5 !h-2.5 !bg-[#00d4aa] !border-[#0a0a0a] !border-2"
+                />
+              </div>
+            ))
         ) : (
           <Handle
             type="source"

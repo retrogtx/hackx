@@ -41,6 +41,7 @@ interface TreeEditorState {
   deleteNode: (id: string) => void;
   updateNodeData: (id: string, data: Partial<FlowNodeData>) => void;
   renameOption: (nodeId: string, oldOption: string, newOption: string) => void;
+  removeOptionEdge: (nodeId: string, option: string) => void;
   setRootNode: (id: string) => void;
   selectNode: (id: string | null) => void;
   setTreeMeta: (name: string, description: string) => void;
@@ -217,19 +218,43 @@ export const useTreeEditorStore = create<TreeEditorState>((set, get) => ({
 
   renameOption: (nodeId, oldOption, newOption) => {
     const { edges } = get();
+    const oldTrimmed = oldOption.trim();
+    const trimmed = newOption.trim();
+    // If renamed to blank, remove the edge entirely
+    if (!trimmed) {
+      set({
+        edges: edges.filter(
+          (e) => !(e.source === nodeId && e.sourceHandle === `answer-${oldTrimmed}`),
+        ),
+        isDirty: true,
+      });
+      return;
+    }
+    if (oldTrimmed === trimmed) return;
     // Re-key edges that reference the old option handle
     const updatedEdges = edges.map((e) => {
-      if (e.source === nodeId && e.sourceHandle === `answer-${oldOption}`) {
+      if (e.source === nodeId && e.sourceHandle === `answer-${oldTrimmed}`) {
         return {
           ...e,
-          id: `${nodeId}-${newOption}-${e.target}`,
-          sourceHandle: `answer-${newOption}`,
-          data: { ...e.data, label: newOption },
+          id: `${nodeId}-${trimmed}-${e.target}`,
+          sourceHandle: `answer-${trimmed}`,
+          data: { ...e.data, label: trimmed },
         };
       }
       return e;
     });
     set({ edges: updatedEdges, isDirty: true });
+  },
+
+  removeOptionEdge: (nodeId, option) => {
+    const { edges } = get();
+    const trimmed = option.trim();
+    set({
+      edges: edges.filter(
+        (e) => !(e.source === nodeId && e.sourceHandle === `answer-${trimmed}`),
+      ),
+      isDirty: true,
+    });
   },
 
   setRootNode: (id) => {

@@ -1,5 +1,12 @@
 import type { Node, Edge } from "@xyflow/react";
 import type { DecisionTreeData, DecisionNode } from "@/lib/db/schema";
+import {
+  answerHandleToKey,
+  answerKeyToHandle,
+  answerToKey,
+  normalizeAnswerLabel,
+  normalizeQuestionOptions,
+} from "@/lib/decision-tree/answer-utils";
 
 export interface FlowNodeData {
   [key: string]: unknown;
@@ -81,45 +88,10 @@ export function decisionTreeToFlow(tree: DecisionTreeData): {
         position: { x, y },
         data: decisionNodeToFlowData(dn, nodeId === tree.rootNodeId),
       });
-
-      // Create edges
-      if (dn.type === "condition") {
-        if (dn.trueChildId) {
-          edges.push({
-            id: `${nodeId}-true-${dn.trueChildId}`,
-            source: nodeId,
-            sourceHandle: "true",
-            target: dn.trueChildId,
-            type: "labeled",
-            data: { label: "True" },
-          });
-        }
-        if (dn.falseChildId) {
-          edges.push({
-            id: `${nodeId}-false-${dn.falseChildId}`,
-            source: nodeId,
-            sourceHandle: "false",
-            target: dn.falseChildId,
-            type: "labeled",
-            data: { label: "False" },
-          });
-        }
-      } else if (dn.type === "question" && dn.childrenByAnswer) {
-        for (const [answer, childId] of Object.entries(dn.childrenByAnswer)) {
-          edges.push({
-            id: `${nodeId}-${answer}-${childId}`,
-            source: nodeId,
-            sourceHandle: `answer-${answer}`,
-            target: childId,
-            type: "labeled",
-            data: { label: answer },
-          });
-        }
-      }
     });
   }
 
-  // Third pass: include disconnected (unreachable) nodes so they aren't lost on save
+  // Third pass: include disconnected (unreachable) nodes AND their edges
   const maxDepth = Math.max(...Array.from(depthNodes.keys()), 0);
   let orphanIndex = 0;
   for (const [nodeId, dn] of Object.entries(tree.nodes)) {
@@ -136,7 +108,59 @@ export function decisionTreeToFlow(tree: DecisionTreeData): {
     orphanIndex++;
   }
 
+  // Build edges from every node, including disconnected subgraphs.
+  for (const [nodeId, dn] of Object.entries(tree.nodes)) {
+    buildEdgesForNode(nodeId, dn, edges);
+  }
+
   return { nodes, edges };
+}
+
+function buildEdgesForNode(nodeId: string, dn: DecisionNode, edges: Edge[]) {
+  if (dn.type === "condition") {
+    if (dn.trueChildId) {
+      edges.push({
+        id: `${nodeId}-true-${dn.trueChildId}`,
+        source: nodeId,
+        sourceHandle: "true",
+        target: dn.trueChildId,
+        type: "labeled",
+        data: { label: "True" },
+      });
+    }
+    if (dn.falseChildId) {
+      edges.push({
+        id: `${nodeId}-false-${dn.falseChildId}`,
+        source: nodeId,
+        sourceHandle: "false",
+        target: dn.falseChildId,
+        type: "labeled",
+        data: { label: "False" },
+      });
+    }
+  } else if (dn.type === "question" && dn.childrenByAnswer) {
+    const optionLabels = dn.question?.options || [];
+    const usedAnswerKeys = new Set<string>();
+    for (const [answer, childId] of Object.entries(dn.childrenByAnswer)) {
+      const answerKey = answerToKey(answer);
+      if (!answerKey || usedAnswerKeys.has(answerKey)) continue;
+
+      const optionLabel =
+        optionLabels.find((option) => answerToKey(option) === answerKey) ||
+        normalizeAnswerLabel(answer);
+      if (!optionLabel) continue;
+
+      edges.push({
+        id: `${nodeId}-${answerKey}-${childId}`,
+        source: nodeId,
+        sourceHandle: answerKeyToHandle(answerKey),
+        target: childId,
+        type: "labeled",
+        data: { label: optionLabel },
+      });
+      usedAnswerKeys.add(answerKey);
+    }
+  }
 }
 
 function decisionNodeToFlowData(node: DecisionNode, isRoot: boolean): FlowNodeData {
@@ -195,10 +219,8 @@ export function flowToDecisionTree(
     };
 
     if (node.data.nodeType === "question") {
-      // Filter out blank and duplicate options
-      const cleanOptions = (node.data.options || [])
-        .map((o) => o.trim())
-        .filter((o, i, arr) => o !== "" && arr.indexOf(o) === i);
+      const cleanOptions = normalizeQuestionOptions(node.data.options || []);
+      const optionKeys = new Set(cleanOptions.map((option) => answerToKey(option)));
 
       dn.question = {
         text: node.data.questionText || "",
@@ -206,15 +228,24 @@ export function flowToDecisionTree(
         extractFrom: node.data.extractFrom || "",
       };
 
-      // Build childrenByAnswer from edges — first edge per label wins
+      // Build childrenByAnswer from edges, normalized by answer key and limited to live options.
       const outEdges = edges.filter((e) => e.source === node.id);
       if (outEdges.length > 0) {
-        dn.childrenByAnswer = {};
+        const childrenByAnswer: Record<string, string> = {};
         for (const edge of outEdges) {
-          const label = (edge.data as { label?: string })?.label || "";
-          if (label && !(label in dn.childrenByAnswer)) {
-            dn.childrenByAnswer[label] = edge.target;
-          }
+          const label = normalizeAnswerLabel((edge.data as { label?: string })?.label || "");
+          const keyFromHandle = answerHandleToKey(edge.sourceHandle);
+          const answerKey = keyFromHandle ?? (label ? answerToKey(label) : "");
+
+          if (!answerKey) continue;
+          if (optionKeys.size > 0 && !optionKeys.has(answerKey)) continue;
+          if (answerKey in childrenByAnswer) continue;
+
+          childrenByAnswer[answerKey] = edge.target;
+        }
+
+        if (Object.keys(childrenByAnswer).length > 0) {
+          dn.childrenByAnswer = childrenByAnswer;
         }
       }
     } else if (node.data.nodeType === "condition") {
