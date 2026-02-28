@@ -103,7 +103,7 @@ RULES:
     : `${expertContext}\n\n${priorRoundContext}\n\nQuestion: ${query}\n\nReview the other experts' responses above. If you need to revise your position, clearly state what changed and why. If another expert's point affects your domain, address it. Cite your sources.`;
 
   const { text } = await generateText({
-    model: openai("gpt-4o"),
+    model: openai("gpt-5"),
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
     tools: {
@@ -178,7 +178,7 @@ async function synthesizeConsensus(
   }));
 
   const { text: consensusText } = await generateText({
-    model: openai("gpt-4o"),
+    model: openai("gpt-5"),
     system: `You are a synthesis moderator for a multi-expert collaboration. Your job is to:
 1. Identify points of agreement and disagreement between experts.
 2. Synthesize a final consensus answer that incorporates all expert perspectives.

@@ -206,7 +206,16 @@ export default function CollaborationRoomPage() {
       setStatusMessage(event.message as string);
     } else if (type === "expert_response") {
       setThinkingExpert(null);
-      const resp = event as unknown as ExpertResponseData & { round: number };
+      const resp: ExpertResponseData & { round: number } = {
+        round: event.round as number,
+        pluginSlug: (event.expert as string) || (event.pluginSlug as string) || "",
+        pluginName: (event.expertName as string) || (event.pluginName as string) || "",
+        domain: event.domain as string,
+        answer: event.answer as string,
+        citations: (event.citations as ExpertResponseData["citations"]) || [],
+        confidence: (event.confidence as ExpertResponseData["confidence"]) || "low",
+        revised: (event.revised as boolean) || false,
+      };
       setRounds((prev) => {
         const updated = [...prev];
         const roundIdx = updated.findIndex((r) => r.roundNumber === resp.round);
