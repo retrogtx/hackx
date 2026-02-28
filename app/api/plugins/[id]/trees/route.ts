@@ -69,20 +69,42 @@ export async function POST(
       );
     }
 
-    // Validate each node has required fields
+    // Validate each node has required fields with correct types
     for (const [nodeId, node] of Object.entries(treeData.nodes)) {
       const n = node as Record<string, unknown>;
-      if (!n.id || !n.type || !n.label) {
+      if (
+        !n ||
+        typeof n !== "object" ||
+        typeof n.id !== "string" ||
+        typeof n.type !== "string" ||
+        typeof n.label !== "string"
+      ) {
         return NextResponse.json(
-          { error: `Invalid node "${nodeId}": must have id, type, and label` },
+          { error: `Invalid node "${nodeId}": must have string id, type, and label` },
           { status: 400 },
         );
       }
-      if (!["condition", "action", "question"].includes(n.type as string)) {
+      if (n.id !== nodeId) {
+        return NextResponse.json(
+          { error: `Invalid node "${nodeId}": id field must match the node key` },
+          { status: 400 },
+        );
+      }
+      if (!["condition", "action", "question"].includes(n.type)) {
         return NextResponse.json(
           { error: `Invalid node "${nodeId}": type must be "condition", "action", or "question"` },
           { status: 400 },
         );
+      }
+      // Condition nodes must have a condition object with field and operator
+      if (n.type === "condition") {
+        const cond = n.condition as Record<string, unknown> | undefined;
+        if (!cond || typeof cond.field !== "string" || typeof cond.operator !== "string") {
+          return NextResponse.json(
+            { error: `Condition node "${nodeId}": must have condition.field and condition.operator` },
+            { status: 400 },
+          );
+        }
       }
     }
 

@@ -47,11 +47,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const allowedCitationModes = ["mandatory", "optional", "none", "off"];
+    const resolvedCitationMode = citationMode === "off" ? "none" : (citationMode || "mandatory");
+    if (citationMode && !allowedCitationModes.includes(citationMode)) {
+      return NextResponse.json(
+        { error: `Invalid citationMode. Allowed: mandatory, optional, none, off` },
+        { status: 400 },
+      );
+    }
+
     // Retry loop handles race conditions on slug uniqueness
-    let plugin;
-    const MAX_SLUG_ATTEMPTS = 5;
+    let plugin: typeof plugins.$inferSelect | undefined;
+    const MAX_SLUG_ATTEMPTS = 10;
     for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
-      const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt}`;
+      const suffix = attempt === 0 ? "" : attempt <= 5 ? `-${attempt}` : `-${Math.random().toString(36).slice(2, 6)}`;
+      const slug = `${baseSlug}${suffix}`;
       const result = await db
         .insert(plugins)
         .values({
@@ -61,7 +71,7 @@ export async function POST(req: NextRequest) {
           domain,
           description: description || null,
           systemPrompt,
-          citationMode: citationMode || "mandatory",
+          citationMode: resolvedCitationMode,
         })
         .onConflictDoNothing({ target: plugins.slug })
         .returning();

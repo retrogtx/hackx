@@ -28,7 +28,11 @@ export async function deleteFile(path: string) {
 }
 
 export async function getFileUrl(path: string) {
-  const { data } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
-  if (!data?.signedUrl) throw new Error("Failed to generate signed URL");
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) {
+    throw new Error(
+      `Failed to generate signed URL: ${error?.message ?? "No signed URL was returned"}`,
+    );
+  }
   return data.signedUrl;
 }

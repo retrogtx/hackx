@@ -7,13 +7,15 @@ import { chunkText } from "@/lib/engine/chunker";
 import { embedTexts } from "@/lib/engine/embedding";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_FILE_TYPES = [
+const MAX_TEXT_SIZE = 10 * 1024 * 1024; // 10MB for pasted text
+const ALLOWED_MIME_TYPES = [
   "text/plain",
   "text/markdown",
   "text/csv",
   "application/json",
   "application/pdf",
 ];
+const ALLOWED_EXTENSIONS = [".txt", ".md", ".csv", ".json", ".pdf"];
 
 export async function GET(
   _req: NextRequest,
@@ -74,14 +76,26 @@ export async function POST(
         );
       }
 
-      if (file.type && !ALLOWED_FILE_TYPES.includes(file.type)) {
+      // Validate by MIME type and file extension
+      const ext = file.name ? `.${file.name.split(".").pop()?.toLowerCase()}` : "";
+      const mimeValid = !file.type || ALLOWED_MIME_TYPES.includes(file.type);
+      const extValid = !ext || ALLOWED_EXTENSIONS.includes(ext);
+      if (!mimeValid || !extValid) {
         return NextResponse.json(
-          { error: `Unsupported file type: ${file.type}. Allowed: .txt, .md, .csv, .json, .pdf` },
+          { error: `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}` },
           { status: 400 },
         );
       }
 
       rawText = await file.text();
+    }
+
+    // Also limit pasted text size
+    if (rawText.length > MAX_TEXT_SIZE) {
+      return NextResponse.json(
+        { error: `Content too large. Maximum size is ${MAX_TEXT_SIZE / 1024 / 1024}MB` },
+        { status: 400 },
+      );
     }
 
     if (!rawText.trim()) {
