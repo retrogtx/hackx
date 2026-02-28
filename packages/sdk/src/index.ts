@@ -3,12 +3,13 @@ import type {
   QueryOptions,
   QueryResult,
   LexicError,
+  StreamEvent,
 } from "./types";
 
-export type { LexicConfig, QueryOptions, QueryResult, Citation, DecisionStep, LexicError } from "./types";
+export type { LexicConfig, QueryOptions, QueryResult, Citation, DecisionStep, LexicError, StreamEvent } from "./types";
 
 const DEFAULT_BASE_URL = "https://dawk-ps2.vercel.app";
-const DEFAULT_TIMEOUT = 30_000;
+const DEFAULT_TIMEOUT = 120_000;
 
 export class Lexic {
   private apiKey: string;
@@ -77,6 +78,84 @@ export class Lexic {
       }
 
       return (await res.json()) as QueryResult;
+    } catch (err) {
+      if (err instanceof LexicAPIError) throw err;
+      if ((err as Error).name === "AbortError") {
+        throw new LexicAPIError(`Request timed out after ${this.timeout}ms`, 408);
+      }
+      throw new LexicAPIError((err as Error).message || "Network error", 0);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Stream a query response. Yields events as they arrive:
+   *   - status  → pipeline progress (searching KB, web search, generating)
+   *   - delta   → text token
+   *   - done    → final citations, confidence, decision path
+   *   - error   → something went wrong
+   *
+   * Usage:
+   * ```ts
+   * for await (const event of lexic.queryStream({ query: "..." })) {
+   *   if (event.type === "delta") process.stdout.write(event.text);
+   *   if (event.type === "done") console.log(event.citations);
+   * }
+   * ```
+   */
+  async *queryStream(options: QueryOptions): AsyncGenerator<StreamEvent> {
+    const plugin = options.plugin || this.activePlugin;
+    if (!plugin) {
+      throw new Error(
+        "Lexic: no plugin specified. Pass `plugin` in query options or call setActivePlugin() first.",
+      );
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      const res = await fetch(`${this.baseUrl}/api/v1/query`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({ plugin, query: options.query, stream: true }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as LexicError;
+        throw new LexicAPIError(body.error || `HTTP ${res.status}`, res.status);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new LexicAPIError("No response stream", 0);
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6)) as StreamEvent;
+            yield event;
+          } catch {
+            // skip malformed events
+          }
+        }
+      }
     } catch (err) {
       if (err instanceof LexicAPIError) throw err;
       if ((err as Error).name === "AbortError") {

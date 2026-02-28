@@ -6,18 +6,26 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Send, Loader2, Bot, User } from "lucide-react";
+import { ArrowLeft, Send, Bot, User, Search, Globe, Brain, Database, CheckCircle2, Loader2 } from "lucide-react";
+
+interface Citation {
+  id: string;
+  document: string;
+  page?: number;
+  section?: string;
+  excerpt: string;
+}
+
+interface StatusStep {
+  status: string;
+  message: string;
+  done?: boolean;
+}
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  citations?: Array<{
-    id: string;
-    document: string;
-    page?: number;
-    section?: string;
-    excerpt: string;
-  }>;
+  citations?: Citation[];
   confidence?: string;
   decisionPath?: Array<{
     step: number;
@@ -25,6 +33,8 @@ interface Message {
     value?: string;
     result?: string;
   }>;
+  streaming?: boolean;
+  statusSteps?: StatusStep[];
 }
 
 interface PluginInfo {
@@ -32,6 +42,15 @@ interface PluginInfo {
   slug: string;
   isPublished: boolean;
 }
+
+const STATUS_ICONS: Record<string, React.ReactNode> = {
+  searching_kb: <Database className="h-3 w-3" />,
+  kb_results: <CheckCircle2 className="h-3 w-3" />,
+  decision_tree: <Brain className="h-3 w-3" />,
+  generating: <Brain className="h-3 w-3" />,
+  web_search: <Globe className="h-3 w-3" />,
+  web_search_done: <CheckCircle2 className="h-3 w-3" />,
+};
 
 export default function SandboxPage() {
   const params = useParams();
@@ -61,8 +80,14 @@ export default function SandboxPage() {
 
     const query = input.trim();
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: query }]);
+
+    const userMsg: Message = { role: "user", content: query };
+    const assistantMsg: Message = { role: "assistant", content: "", streaming: true, statusSteps: [] };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setLoading(true);
+
+    const assistantIdx = messages.length + 1;
 
     try {
       const res = await fetch(`/api/sandbox/${pluginId}`, {
@@ -71,30 +96,109 @@ export default function SandboxPage() {
         body: JSON.stringify({ query }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: `Error: ${data.error}` },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: data.answer,
-            citations: data.citations,
-            confidence: data.confidence,
-            decisionPath: data.decisionPath,
-          },
-        ]);
+        const data = await res.json();
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[assistantIdx] = { role: "assistant", content: `Error: ${data.error}`, streaming: false };
+          return updated;
+        });
+        setLoading(false);
+        return;
       }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === "status") {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const msg = { ...updated[assistantIdx] };
+                const steps = [...(msg.statusSteps || [])];
+
+                // Mark previous step of same category as done
+                if (event.status === "kb_results") {
+                  const idx = steps.findIndex((s) => s.status === "searching_kb");
+                  if (idx >= 0) steps[idx] = { ...steps[idx], done: true };
+                }
+                if (event.status === "web_search_done") {
+                  const idx = steps.findIndex((s) => s.status === "web_search" && !s.done);
+                  if (idx >= 0) steps[idx] = { ...steps[idx], done: true };
+                }
+
+                steps.push({ status: event.status, message: event.message });
+                msg.statusSteps = steps;
+                updated[assistantIdx] = msg;
+                return updated;
+              });
+            } else if (event.type === "delta") {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const msg = { ...updated[assistantIdx] };
+                msg.content += event.text;
+                updated[assistantIdx] = msg;
+                return updated;
+              });
+            } else if (event.type === "done") {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const msg = { ...updated[assistantIdx] };
+                msg.citations = event.citations;
+                msg.confidence = event.confidence;
+                msg.decisionPath = event.decisionPath;
+                msg.streaming = false;
+                updated[assistantIdx] = msg;
+                return updated;
+              });
+            } else if (event.type === "error") {
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[assistantIdx] = { role: "assistant", content: `Error: ${event.error}`, streaming: false };
+                return updated;
+              });
+            }
+          } catch {
+            // skip malformed JSON
+          }
+        }
+      }
+
+      // Ensure streaming flag is cleared
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (updated[assistantIdx]?.streaming) {
+          updated[assistantIdx] = { ...updated[assistantIdx], streaming: false };
+        }
+        return updated;
+      });
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Failed to get response" },
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (updated[assistantIdx]) {
+          updated[assistantIdx] = {
+            role: "assistant",
+            content: updated[assistantIdx].content || "Failed to get response",
+            streaming: false,
+          };
+        }
+        return updated;
+      });
     } finally {
       setLoading(false);
     }
@@ -151,9 +255,47 @@ export default function SandboxPage() {
                         : "border border-[#262626] bg-[#111111]"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                    {/* Status steps (thinking/searching) */}
+                    {msg.role === "assistant" && msg.statusSteps && msg.statusSteps.length > 0 && (
+                      <div className="mb-3 space-y-1.5">
+                        {msg.statusSteps.map((step, si) => (
+                          <div key={si} className="flex items-center gap-2 text-xs">
+                            <span className={step.done ? "text-[#00d4aa]" : "text-[#666]"}>
+                              {step.done ? (
+                                STATUS_ICONS[step.status] || <CheckCircle2 className="h-3 w-3" />
+                              ) : (
+                                !msg.content && si === msg.statusSteps!.length - 1 ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  STATUS_ICONS[step.status] || <Search className="h-3 w-3" />
+                                )
+                              )}
+                            </span>
+                            <span className={step.done ? "text-[#555] line-through" : "text-[#888]"}>
+                              {step.message}
+                            </span>
+                          </div>
+                        ))}
+                        {msg.content && (
+                          <div className="border-b border-[#1f1f1f] mt-2 mb-1" />
+                        )}
+                      </div>
+                    )}
 
-                    {msg.confidence && (
+                    {/* Message content */}
+                    {msg.content ? (
+                      <p className="whitespace-pre-wrap text-sm">
+                        {msg.content}
+                        {msg.streaming && (
+                          <span className="inline-block ml-0.5 w-1.5 h-4 bg-[#a1a1a1] animate-pulse rounded-sm" />
+                        )}
+                      </p>
+                    ) : msg.streaming ? null : (
+                      <p className="text-sm text-[#666] italic">No response generated</p>
+                    )}
+
+                    {/* Confidence badge */}
+                    {msg.confidence && !msg.streaming && (
                       <Badge
                         className={`mt-2 ${
                           msg.confidence === "high"
@@ -167,14 +309,12 @@ export default function SandboxPage() {
                       </Badge>
                     )}
 
-                    {msg.citations && msg.citations.length > 0 && (
+                    {/* Citations */}
+                    {msg.citations && msg.citations.length > 0 && !msg.streaming && (
                       <div className="mt-3 space-y-2 border-t border-[#262626] pt-2">
                         <p className="text-xs font-semibold text-[#666]">Sources:</p>
                         {msg.citations.map((c) => (
-                          <div
-                            key={c.id}
-                            className="rounded-lg bg-[#1a1a1a] p-2 text-xs"
-                          >
+                          <div key={c.id} className="rounded-lg bg-[#1a1a1a] p-2 text-xs">
                             <span className="font-semibold text-[#ededed]">{c.document}</span>
                             {c.section && (
                               <span className="text-[#666]"> — {c.section}</span>
@@ -185,11 +325,10 @@ export default function SandboxPage() {
                       </div>
                     )}
 
-                    {msg.decisionPath && msg.decisionPath.length > 0 && (
+                    {/* Decision path */}
+                    {msg.decisionPath && msg.decisionPath.length > 0 && !msg.streaming && (
                       <div className="mt-3 space-y-1 border-t border-[#262626] pt-2">
-                        <p className="text-xs font-semibold text-[#666]">
-                          Decision Path:
-                        </p>
+                        <p className="text-xs font-semibold text-[#666]">Decision Path:</p>
                         {msg.decisionPath.map((step) => (
                           <div key={step.step} className="text-xs text-[#888]">
                             {step.step}. {step.label}
@@ -207,17 +346,6 @@ export default function SandboxPage() {
                   )}
                 </div>
               ))}
-              {loading && (
-                <div className="flex gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1a1a1a] border border-[#262626]">
-                    <Bot className="h-4 w-4 text-[#a1a1a1]" />
-                  </div>
-                  <div className="flex items-center gap-2 rounded-md border border-[#262626] bg-[#111111] px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-[#a1a1a1]" />
-                    <span className="text-sm text-[#a1a1a1]">Thinking...</span>
-                  </div>
-                </div>
-              )}
               <div ref={messagesEndRef} />
             </div>
           )}

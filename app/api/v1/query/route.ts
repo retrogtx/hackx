@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { apiKeys, plugins } from "@/lib/db/schema";
 import { eq, and, or } from "drizzle-orm";
 import { hashApiKey } from "@/lib/utils/api-key";
-import { runQueryPipeline } from "@/lib/engine/query-pipeline";
+import { runQueryPipeline, streamQueryPipeline } from "@/lib/engine/query-pipeline";
 
 const MAX_QUERY_LENGTH = 4000;
 
@@ -69,9 +69,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Run pipeline — we already verified access above, so skip the publish check
-    const result = await runQueryPipeline(pluginSlug, query, apiKey.id, { skipPublishCheck: true });
+    // 4. Run pipeline — check if client wants streaming
+    const wantsStream = body.stream === true || req.headers.get("accept")?.includes("text/event-stream");
 
+    if (wantsStream) {
+      const stream = await streamQueryPipeline(pluginSlug, query, apiKey.id, { skipPublishCheck: true });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
+    const result = await runQueryPipeline(pluginSlug, query, apiKey.id, { skipPublishCheck: true });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof Error) {
@@ -82,6 +94,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 403 });
       }
     }
+    console.error("[QueryAPI] Unhandled error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
