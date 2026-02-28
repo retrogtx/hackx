@@ -21,7 +21,7 @@ export async function GET() {
       .where(eq(plugins.creatorId, user.id))
       .orderBy(desc(plugins.createdAt));
     return NextResponse.json(userPlugins);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

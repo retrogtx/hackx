@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Copy,
   Check,
-  ChevronRight,
   Key,
   Plug,
   FileText,
