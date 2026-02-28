@@ -88,6 +88,7 @@ export default function KnowledgeBasePage() {
     if (!window.confirm("Delete this document? This will remove all its chunks and embeddings. This cannot be undone.")) {
       return;
     }
+    setError("");
     try {
       const res = await fetch(`/api/plugins/${pluginId}/documents?docId=${docId}`, {
         method: "DELETE",

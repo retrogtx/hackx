@@ -69,8 +69,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Run pipeline
-    const result = await runQueryPipeline(pluginSlug, query, apiKey.id);
+    // 4. Run pipeline — we already verified access above, so skip the publish check
+    const result = await runQueryPipeline(pluginSlug, query, apiKey.id, { skipPublishCheck: true });
 
     return NextResponse.json(result);
   } catch (error) {

@@ -44,6 +44,7 @@ export async function runQueryPipeline(
   pluginSlug: string,
   query: string,
   apiKeyId?: string,
+  options?: { skipPublishCheck?: boolean },
 ): Promise<QueryResult> {
   const start = Date.now();
 
@@ -52,7 +53,9 @@ export async function runQueryPipeline(
     where: eq(plugins.slug, pluginSlug),
   });
   if (!plugin) throw new Error(`Plugin not found: ${pluginSlug}`);
-  if (!plugin.isPublished) throw new Error(`Plugin is not published: ${pluginSlug}`);
+  if (!options?.skipPublishCheck && !plugin.isPublished) {
+    throw new Error(`Plugin is not published: ${pluginSlug}`);
+  }
 
   // 2. Retrieve sources
   const sources = await retrieveSources(query, plugin.id);
