@@ -134,15 +134,19 @@ function buildEdgesForNode(nodeId: string, dn: DecisionNode, edges: Edge[]) {
       });
     }
   } else if (dn.type === "question" && dn.childrenByAnswer) {
-    const optionLabels = dn.question?.options || [];
+    const optionLabels = normalizeQuestionOptions(dn.question?.options || []);
+    if (optionLabels.length === 0) return;
+
+    const optionLabelByKey = new Map<string, string>();
+    for (const optionLabel of optionLabels) {
+      optionLabelByKey.set(answerToKey(optionLabel), optionLabel);
+    }
+
     const usedAnswerKeys = new Set<string>();
     for (const [answer, childId] of Object.entries(dn.childrenByAnswer)) {
       const answerKey = answerToKey(answer);
       if (!answerKey || usedAnswerKeys.has(answerKey)) continue;
-
-      const optionLabel =
-        optionLabels.find((option) => answerToKey(option) === answerKey) ||
-        normalizeAnswerLabel(answer);
+      const optionLabel = optionLabelByKey.get(answerKey);
       if (!optionLabel) continue;
 
       edges.push({
@@ -186,7 +190,16 @@ function getChildren(node: DecisionNode): string[] {
   const children: string[] = [];
   if (node.trueChildId) children.push(node.trueChildId);
   if (node.falseChildId) children.push(node.falseChildId);
-  if (node.childrenByAnswer) {
+  if (node.type === "question" && node.childrenByAnswer) {
+    const optionKeys = new Set(
+      normalizeQuestionOptions(node.question?.options || []).map((option) => answerToKey(option)),
+    );
+    for (const [answer, childId] of Object.entries(node.childrenByAnswer)) {
+      if (optionKeys.has(answerToKey(answer))) {
+        children.push(childId);
+      }
+    }
+  } else if (node.childrenByAnswer) {
     children.push(...Object.values(node.childrenByAnswer));
   }
   return children;
@@ -233,7 +246,7 @@ export function flowToDecisionTree(
           const answerKey = keyFromHandle ?? (label ? answerToKey(label) : "");
 
           if (!answerKey) continue;
-          if (optionKeys.size > 0 && !optionKeys.has(answerKey)) continue;
+          if (!optionKeys.has(answerKey)) continue;
           if (answerKey in childrenByAnswer) continue;
 
           childrenByAnswer[answerKey] = edge.target;

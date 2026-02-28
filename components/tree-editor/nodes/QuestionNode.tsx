@@ -67,12 +67,7 @@ export function QuestionNode({ data, selected }: NodeProps<QuestionNodeType>) {
             </div>
           ))
         ) : (
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="default"
-            className="!w-3 !h-3 !bg-[#00d4aa] !border-[#0a0a0a] !border-2"
-          />
+          <span className="text-[10px] text-[#666]">Add options to create branches</span>
         )}
       </div>
     </div>

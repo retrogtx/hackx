@@ -132,13 +132,14 @@ export const useTreeEditorStore = create<TreeEditorState>((set, get) => ({
     // Question nodes: label by answer, one target per sourceHandle
     if (sourceNode.data.nodeType === "question") {
       const answerKey = answerHandleToKey(connection.sourceHandle);
+      if (!answerKey) return;
+
       const options = sourceNode.data.options || [];
-      const answerLabel = answerKey
-        ? normalizeAnswerLabel(
-          options.find((option) => answerToKey(option) === answerKey) || answerKey,
-        )
-        : `option-${edges.filter((e) => e.source === connection.source).length + 1}`;
-      const normalizedHandle = answerKey ? answerKeyToHandle(answerKey) : connection.sourceHandle;
+      const matchingOption = options.find((option) => answerToKey(option) === answerKey);
+      if (!matchingOption) return;
+
+      const answerLabel = normalizeAnswerLabel(matchingOption);
+      const normalizedHandle = answerKeyToHandle(answerKey);
 
       // Block if this sourceHandle already has a connection
       const handleTaken = edges.some(
@@ -146,7 +147,7 @@ export const useTreeEditorStore = create<TreeEditorState>((set, get) => ({
       );
       if (handleTaken) return;
 
-      const edgeKey = answerKey || answerToKey(answerLabel) || "option";
+      const edgeKey = answerToKey(answerLabel) || answerKey;
       const newEdge: Edge = {
         id: `${connection.source}-${edgeKey}-${connection.target}`,
         source: connection.source!,

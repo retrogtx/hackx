@@ -104,6 +104,20 @@ function resolveQuestionChildId(
     }
   }
 
+  // Backward compatibility for legacy trees that stored question branches without options.
+  const normalizedOptions = (node.question?.options || [])
+    .map((option) => answerToKey(option))
+    .filter((option) => option !== "");
+  if (normalizedOptions.length === 0) {
+    if (childrenByAnswer.default) return childrenByAnswer.default;
+    if (childrenByAnswer.__default__) return childrenByAnswer.__default__;
+
+    const entries = Object.entries(childrenByAnswer);
+    if (entries.length === 1) {
+      return entries[0][1];
+    }
+  }
+
   return undefined;
 }
 
