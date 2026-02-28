@@ -63,7 +63,11 @@ export default async function MarketplacePluginPage({
           Back to Home
         </Link>
 
-        <MarketplaceActions slug={plugin.slug} isSignedIn={Boolean(userId)} />
+        <MarketplaceActions
+          slug={plugin.slug}
+          isSignedIn={Boolean(userId)}
+          isOwner={Boolean(userId && userId === plugin.creator.clerkId)}
+        />
 
         <div className="rounded-md border border-[#262626] bg-[#0a0a0a]">
           <div className="border-b border-[#262626] px-6 py-5">

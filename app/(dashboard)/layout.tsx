@@ -1,11 +1,14 @@
 import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { Blocks, Key, FlaskConical, Store, Users } from "lucide-react";
+import { Blocks, Key, FlaskConical, Store, Download, Users } from "lucide-react";
+import { UserProfileDialog } from "./user-profile-dialog";
+import { UserSearch } from "./user-search";
 import { DashboardOnboardingTour } from "@/components/dashboard-onboarding-tour";
 
 const navItems = [
   { href: "/plugins", label: "Plugins", icon: Blocks },
+  { href: "/plugins?filter=downloaded", label: "Downloaded", icon: Download },
   { href: "/collaboration", label: "Collab Rooms", icon: Users },
   { href: "/marketplace", label: "Marketplace", icon: Store },
   { href: "/api-keys", label: "API Keys", icon: Key },
@@ -17,10 +20,22 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const user = await currentUser();
+  const unsafeMetadata =
+    user?.unsafeMetadata && typeof user.unsafeMetadata === "object" && !Array.isArray(user.unsafeMetadata)
+      ? (user.unsafeMetadata as Record<string, unknown>)
+      : {};
   const displayName =
+    (typeof unsafeMetadata.name === "string" && unsafeMetadata.name) ||
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
     user?.emailAddresses[0]?.emailAddress ||
     "";
+  const initialName =
+    (typeof unsafeMetadata.name === "string" && unsafeMetadata.name) || displayName;
+  const initialUsername =
+    (typeof unsafeMetadata.username === "string" && unsafeMetadata.username) ||
+    user?.username ||
+    "";
+  const email = user?.emailAddresses[0]?.emailAddress || "";
 
   return (
     <div className="flex min-h-screen bg-[#0a0a0a]">
@@ -59,6 +74,7 @@ export default async function DashboardLayout({
               {item.label}
             </Link>
           ))}
+          {user ? <UserSearch /> : null}
         </nav>
 
         <div className="border-t border-[#262626] p-4">
@@ -71,9 +87,12 @@ export default async function DashboardLayout({
                 }}
               />
               {displayName && (
-                <span className="truncate text-sm text-[#a1a1a1]">
-                  {displayName}
-                </span>
+                <UserProfileDialog
+                  displayName={displayName}
+                  initialName={initialName}
+                  initialUsername={initialUsername}
+                  email={email}
+                />
               )}
             </div>
           ) : (
