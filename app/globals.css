@@ -125,3 +125,62 @@
     font-feature-settings: "ss01", "ss02", "cv01";
   }
 }
+
+/* ReactFlow dark theme overrides */
+.tree-editor-canvas .react-flow__pane {
+  cursor: grab;
+}
+
+.tree-editor-canvas .react-flow__pane:active {
+  cursor: grabbing;
+}
+
+.tree-editor-controls .react-flow__controls {
+  background: #111111;
+  border: 1px solid #262626;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.tree-editor-controls .react-flow__controls-button {
+  background: #111111;
+  border-bottom: 1px solid #262626;
+  fill: #a1a1a1;
+  color: #a1a1a1;
+}
+
+.tree-editor-controls .react-flow__controls-button:hover {
+  background: #1a1a1a;
+  fill: #ededed;
+}
+
+.tree-editor-minimap.react-flow__minimap {
+  background: #111111;
+  border: 1px solid #262626;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.react-flow__handle {
+  transition: box-shadow 0.15s ease;
+}
+
+.react-flow__handle:hover {
+  box-shadow: 0 0 6px rgba(0, 212, 170, 0.5);
+}
+
+.react-flow__edge-path {
+  stroke: #404040;
+  stroke-width: 1.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #00d4aa;
+  stroke-width: 2;
+}
+
+.react-flow__connection-line {
+  stroke: #00d4aa;
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+}

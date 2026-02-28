@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, GitBranch, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, GitBranch, Loader2, Trash2, Pencil } from "lucide-react";
 
 interface Tree {
   id: string;
@@ -18,89 +17,14 @@ interface Tree {
   createdAt: string;
 }
 
-const EXAMPLE_TREE = JSON.stringify(
-  {
-    rootNodeId: "q1",
-    nodes: {
-      q1: {
-        id: "q1",
-        type: "question",
-        label: "What type of structural member?",
-        question: {
-          text: "What type of structural member?",
-          options: ["beam", "column", "slab"],
-          extractFrom: "member_type",
-        },
-        childrenByAnswer: {
-          beam: "c1",
-          column: "c2",
-          slab: "a1",
-        },
-      },
-      c1: {
-        id: "c1",
-        type: "condition",
-        label: "Is exposure severe?",
-        condition: {
-          field: "exposure",
-          operator: "eq",
-          value: "severe",
-        },
-        trueChildId: "a2",
-        falseChildId: "a3",
-      },
-      c2: {
-        id: "c2",
-        type: "action",
-        label: "Column recommendation",
-        action: {
-          recommendation: "Use IS 456 Table 16 for column cover requirements",
-          sourceHint: "IS 456 Table 16 nominal cover",
-          severity: "info",
-        },
-      },
-      a1: {
-        id: "a1",
-        type: "action",
-        label: "Slab recommendation",
-        action: {
-          recommendation: "For slabs, refer to IS 456 Clause 26.4.2",
-          sourceHint: "IS 456 Clause 26.4.2",
-          severity: "info",
-        },
-      },
-      a2: {
-        id: "a2",
-        type: "action",
-        label: "Severe exposure beam",
-        action: {
-          recommendation: "45mm nominal cover required for beams in severe exposure",
-          sourceHint: "IS 456 Table 16 severe exposure beam",
-          severity: "warning",
-        },
-      },
-      a3: {
-        id: "a3",
-        type: "action",
-        label: "Mild exposure beam",
-        action: {
-          recommendation: "20mm nominal cover for beams in mild exposure",
-          sourceHint: "IS 456 Table 16 mild exposure beam",
-          severity: "info",
-        },
-      },
-    },
-  },
-  null,
-  2,
-);
-
 export default function DecisionTreesPage() {
   const params = useParams();
+  const router = useRouter();
   const pluginId = params.id as string;
   const [trees, setTrees] = useState<Tree[]>([]);
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const loadTrees = useCallback(async () => {
@@ -120,10 +44,12 @@ export default function DecisionTreesPage() {
     const formData = new FormData(e.currentTarget);
     const name = formData.get("name") as string;
     const description = formData.get("description") as string;
-    const treeJson = formData.get("treeData") as string;
 
     try {
-      const treeData = JSON.parse(treeJson);
+      const treeData = {
+        rootNodeId: "",
+        nodes: {},
+      };
 
       const res = await fetch(`/api/plugins/${pluginId}/trees`, {
         method: "POST",
@@ -136,18 +62,29 @@ export default function DecisionTreesPage() {
         throw new Error(err.error);
       }
 
-      await loadTrees();
-      setCreating(false);
+      const tree = await res.json();
+      router.push(`/plugins/${pluginId}/trees/${tree.id}`);
     } catch (err) {
-      setError(
-        err instanceof SyntaxError
-          ? "Invalid JSON"
-          : err instanceof Error
-            ? err.message
-            : "Failed to create tree",
-      );
+      setError(err instanceof Error ? err.message : "Failed to create tree");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDelete(treeId: string) {
+    if (!confirm("Delete this decision tree? This cannot be undone.")) return;
+
+    setDeleting(treeId);
+    try {
+      const res = await fetch(`/api/plugins/${pluginId}/trees/${treeId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      await loadTrees();
+    } catch {
+      setError("Failed to delete tree");
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -179,8 +116,7 @@ export default function DecisionTreesPage() {
           <div className="border-b border-[#262626] p-6">
             <h2 className="font-bold text-white">Create Decision Tree</h2>
             <p className="mt-1 text-sm text-[#a1a1a1]">
-              Define the tree as JSON. Each node can be a condition, question, or
-              action.
+              Give your tree a name and you&apos;ll be taken to the visual editor.
             </p>
           </div>
           <div className="p-6">
@@ -204,17 +140,6 @@ export default function DecisionTreesPage() {
                   className="border-[#262626] bg-[#111111] text-white placeholder:text-[#555] focus:border-[#444] focus:ring-0"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="treeData" className="text-[#ededed]">Tree JSON</Label>
-                <Textarea
-                  id="treeData"
-                  name="treeData"
-                  defaultValue={EXAMPLE_TREE}
-                  rows={20}
-                  className="border-[#262626] bg-[#111111] text-white text-xs focus:border-[#444] focus:ring-0"
-                  required
-                />
-              </div>
 
               {error && <p className="text-sm text-[#ff4444]">{error}</p>}
 
@@ -226,7 +151,7 @@ export default function DecisionTreesPage() {
                       Creating...
                     </>
                   ) : (
-                    "Create Tree"
+                    "Create & Open Editor"
                   )}
                 </Button>
                 <Button
@@ -258,8 +183,14 @@ export default function DecisionTreesPage() {
       ) : (
         <div className="space-y-2">
           {trees.map((tree) => (
-            <div key={tree.id} className="flex items-center justify-between rounded-md border border-[#262626] bg-[#0a0a0a] p-4 transition-colors hover:border-[#333]">
-              <div className="flex items-center gap-3">
+            <div
+              key={tree.id}
+              className="group flex items-center justify-between rounded-md border border-[#262626] bg-[#0a0a0a] p-4 transition-colors hover:border-[#333]"
+            >
+              <Link
+                href={`/plugins/${pluginId}/trees/${tree.id}`}
+                className="flex flex-1 items-center gap-3"
+              >
                 <GitBranch className="h-5 w-5 text-[#00d4aa]" />
                 <div>
                   <p className="font-semibold text-white">{tree.name}</p>
@@ -269,15 +200,34 @@ export default function DecisionTreesPage() {
                     </p>
                   )}
                 </div>
+              </Link>
+              <div className="flex items-center gap-3">
+                <Badge
+                  className={tree.isActive
+                    ? "bg-[#00d4aa]/10 text-[#00d4aa] border-[#00d4aa]/20"
+                    : "bg-[#1a1a1a] text-[#666] border-[#262626]"
+                  }
+                >
+                  {tree.isActive ? "Active" : "Inactive"}
+                </Badge>
+                <Link
+                  href={`/plugins/${pluginId}/trees/${tree.id}`}
+                  className="text-[#666] hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Link>
+                <button
+                  onClick={() => handleDelete(tree.id)}
+                  disabled={deleting === tree.id}
+                  className="text-[#666] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                >
+                  {deleting === tree.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                </button>
               </div>
-              <Badge
-                className={tree.isActive
-                  ? "bg-[#00d4aa]/10 text-[#00d4aa] border-[#00d4aa]/20"
-                  : "bg-[#1a1a1a] text-[#666] border-[#262626]"
-                }
-              >
-                {tree.isActive ? "Active" : "Inactive"}
-              </Badge>
             </div>
           ))}
         </div>

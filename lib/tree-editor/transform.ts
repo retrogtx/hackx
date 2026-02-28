@@ -1,0 +1,230 @@
+import type { Node, Edge } from "@xyflow/react";
+import type { DecisionTreeData, DecisionNode } from "@/lib/db/schema";
+
+export interface FlowNodeData {
+  [key: string]: unknown;
+  label: string;
+  nodeType: DecisionNode["type"];
+  isRoot: boolean;
+  // Question fields
+  questionText?: string;
+  extractFrom?: string;
+  options?: string[];
+  // Condition fields
+  conditionField?: string;
+  conditionOperator?: "eq" | "gt" | "lt" | "contains" | "in";
+  conditionValue?: string;
+  // Action fields
+  recommendation?: string;
+  sourceHint?: string;
+  severity?: "info" | "warning" | "critical";
+}
+
+const NODE_SPACING_X = 250;
+const NODE_SPACING_Y = 150;
+
+/**
+ * Convert a DecisionTreeData JSON structure into ReactFlow nodes and edges.
+ * Uses BFS from root to auto-layout nodes in a top-down tree.
+ */
+export function decisionTreeToFlow(tree: DecisionTreeData): {
+  nodes: Node<FlowNodeData>[];
+  edges: Edge[];
+} {
+  const nodes: Node<FlowNodeData>[] = [];
+  const edges: Edge[] = [];
+
+  if (!tree || !tree.rootNodeId || !tree.nodes) {
+    return { nodes, edges };
+  }
+
+  // BFS to assign positions
+  const visited = new Set<string>();
+  const queue: { id: string; depth: number; index: number; parentCount: number }[] = [];
+  const depthCounts: Map<number, number> = new Map();
+
+  // First pass: count nodes at each depth for centering
+  const depthNodes: Map<number, string[]> = new Map();
+  const bfsQueue: { id: string; depth: number }[] = [{ id: tree.rootNodeId, depth: 0 }];
+  const bfsVisited = new Set<string>();
+
+  while (bfsQueue.length > 0) {
+    const { id, depth } = bfsQueue.shift()!;
+    if (bfsVisited.has(id) || !tree.nodes[id]) continue;
+    bfsVisited.add(id);
+
+    if (!depthNodes.has(depth)) depthNodes.set(depth, []);
+    depthNodes.get(depth)!.push(id);
+
+    const node = tree.nodes[id];
+    const children = getChildren(node);
+    for (const childId of children) {
+      if (!bfsVisited.has(childId)) {
+        bfsQueue.push({ id: childId, depth: depth + 1 });
+      }
+    }
+  }
+
+  // Second pass: create nodes with centered positions
+  for (const [depth, nodeIds] of depthNodes) {
+    const count = nodeIds.length;
+    nodeIds.forEach((nodeId, idx) => {
+      const dn = tree.nodes[nodeId];
+      if (!dn) return;
+
+      const x = (idx - (count - 1) / 2) * NODE_SPACING_X;
+      const y = depth * NODE_SPACING_Y;
+
+      nodes.push({
+        id: nodeId,
+        type: dn.type,
+        position: { x, y },
+        data: decisionNodeToFlowData(dn, nodeId === tree.rootNodeId),
+      });
+
+      // Create edges
+      if (dn.type === "condition") {
+        if (dn.trueChildId) {
+          edges.push({
+            id: `${nodeId}-true-${dn.trueChildId}`,
+            source: nodeId,
+            sourceHandle: "true",
+            target: dn.trueChildId,
+            type: "labeled",
+            data: { label: "True" },
+          });
+        }
+        if (dn.falseChildId) {
+          edges.push({
+            id: `${nodeId}-false-${dn.falseChildId}`,
+            source: nodeId,
+            sourceHandle: "false",
+            target: dn.falseChildId,
+            type: "labeled",
+            data: { label: "False" },
+          });
+        }
+      } else if (dn.type === "question" && dn.childrenByAnswer) {
+        for (const [answer, childId] of Object.entries(dn.childrenByAnswer)) {
+          edges.push({
+            id: `${nodeId}-${answer}-${childId}`,
+            source: nodeId,
+            sourceHandle: `answer-${answer}`,
+            target: childId,
+            type: "labeled",
+            data: { label: answer },
+          });
+        }
+      }
+    });
+  }
+
+  return { nodes, edges };
+}
+
+function decisionNodeToFlowData(node: DecisionNode, isRoot: boolean): FlowNodeData {
+  const data: FlowNodeData = {
+    label: node.label,
+    nodeType: node.type,
+    isRoot,
+  };
+
+  if (node.type === "question" && node.question) {
+    data.questionText = node.question.text;
+    data.extractFrom = node.question.extractFrom;
+    data.options = node.question.options || [];
+  } else if (node.type === "condition" && node.condition) {
+    data.conditionField = node.condition.field;
+    data.conditionOperator = node.condition.operator;
+    data.conditionValue = String(node.condition.value);
+  } else if (node.type === "action" && node.action) {
+    data.recommendation = node.action.recommendation;
+    data.sourceHint = node.action.sourceHint;
+    data.severity = node.action.severity;
+  }
+
+  return data;
+}
+
+function getChildren(node: DecisionNode): string[] {
+  const children: string[] = [];
+  if (node.trueChildId) children.push(node.trueChildId);
+  if (node.falseChildId) children.push(node.falseChildId);
+  if (node.childrenByAnswer) {
+    children.push(...Object.values(node.childrenByAnswer));
+  }
+  return children;
+}
+
+/**
+ * Convert ReactFlow nodes and edges back into DecisionTreeData JSON format.
+ */
+export function flowToDecisionTree(
+  nodes: Node<FlowNodeData>[],
+  edges: Edge[],
+): DecisionTreeData {
+  const rootNode = nodes.find((n) => n.data.isRoot);
+  if (!rootNode) {
+    throw new Error("No root node found. Please mark one node as root.");
+  }
+
+  const decisionNodes: Record<string, DecisionNode> = {};
+
+  for (const node of nodes) {
+    const dn: DecisionNode = {
+      id: node.id,
+      type: node.data.nodeType,
+      label: node.data.label,
+    };
+
+    if (node.data.nodeType === "question") {
+      dn.question = {
+        text: node.data.questionText || "",
+        options: node.data.options || [],
+        extractFrom: node.data.extractFrom || "",
+      };
+
+      // Build childrenByAnswer from edges
+      const outEdges = edges.filter((e) => e.source === node.id);
+      if (outEdges.length > 0) {
+        dn.childrenByAnswer = {};
+        for (const edge of outEdges) {
+          const label = (edge.data as { label?: string })?.label || "";
+          if (label) {
+            dn.childrenByAnswer[label] = edge.target;
+          }
+        }
+      }
+    } else if (node.data.nodeType === "condition") {
+      dn.condition = {
+        field: node.data.conditionField || "",
+        operator: node.data.conditionOperator || "eq",
+        value: node.data.conditionValue || "",
+      };
+
+      // Build trueChildId/falseChildId from edges
+      const outEdges = edges.filter((e) => e.source === node.id);
+      for (const edge of outEdges) {
+        const label = (edge.data as { label?: string })?.label || "";
+        if (edge.sourceHandle === "true" || label === "True") {
+          dn.trueChildId = edge.target;
+        } else if (edge.sourceHandle === "false" || label === "False") {
+          dn.falseChildId = edge.target;
+        }
+      }
+    } else if (node.data.nodeType === "action") {
+      dn.action = {
+        recommendation: node.data.recommendation || "",
+        sourceHint: node.data.sourceHint || "",
+        severity: node.data.severity || "info",
+      };
+    }
+
+    decisionNodes[node.id] = dn;
+  }
+
+  return {
+    rootNodeId: rootNode.id,
+    nodes: decisionNodes,
+  };
+}
