@@ -6,13 +6,24 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
+  AlertTriangle,
   Download,
   ExternalLink,
   Loader2,
@@ -44,6 +55,8 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
   const [plugins, setPlugins] = useState(initialPlugins);
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
   const [busyPluginId, setBusyPluginId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PluginListItem | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [error, setError] = useState("");
 
   const sharedCount = useMemo(
@@ -138,6 +151,8 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
       }
 
       setPlugins((prev) => prev.filter((plugin) => plugin.id !== pluginId));
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete plugin");
     } finally {
@@ -204,7 +219,7 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
         </div>
       ) : null}
 
-      {plugins.length === 0 ? (
+	      {plugins.length === 0 ? (
         <div className="rounded-md border border-dashed border-[#333] px-4 py-10 text-center text-sm text-[#a1a1a1]">
           No plugins left. Create a new plugin to continue.
         </div>
@@ -290,13 +305,17 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
                           <Download className="h-4 w-4" />
                           Download plugin
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator className="bg-[#262626]" />
-                        <DropdownMenuItem
-                          onClick={() => deletePlugin(plugin.id)}
-                          variant="destructive"
-                          className="cursor-pointer"
-                          disabled={isBusy}
-                        >
+	                        <DropdownMenuSeparator className="bg-[#262626]" />
+	                        <DropdownMenuItem
+	                          onClick={() => {
+	                            setDeleteTarget(plugin);
+	                            setDeleteConfirmText("");
+	                            setError("");
+	                          }}
+	                          variant="destructive"
+	                          className="cursor-pointer"
+	                          disabled={isBusy}
+	                        >
                           <Trash2 className="h-4 w-4" />
                           Delete plugin
                         </DropdownMenuItem>
@@ -316,7 +335,80 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
             );
           })}
         </div>
-      )}
-    </div>
-  );
+	      )}
+
+	      <Dialog
+	        open={Boolean(deleteTarget)}
+	        onOpenChange={(open) => {
+	          if (!open) {
+	            setDeleteTarget(null);
+	            setDeleteConfirmText("");
+	          }
+	        }}
+	      >
+	        <DialogContent
+	          showCloseButton={false}
+	          className="border-[#262626] bg-[#0a0a0a] sm:max-w-[430px]"
+	        >
+	          <DialogHeader>
+	            <DialogTitle className="text-white">Delete Plugin</DialogTitle>
+	            <DialogDescription className="text-[#a1a1a1]">
+	              This will permanently delete{" "}
+	              <span className="font-medium text-white">{deleteTarget?.name}</span>, including
+	              knowledge documents, configuration, and plugin setup.
+	            </DialogDescription>
+	          </DialogHeader>
+
+	          <div className="w-fit rounded-md border border-[#ff4444]/20 bg-[#ff4444]/5 px-3 py-2">
+	            <div className="flex items-start gap-2">
+	              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#ff4444]" />
+	              <p className="text-sm text-[#ff4444]">This action cannot be undone.</p>
+	            </div>
+	          </div>
+
+	          <div className="space-y-2">
+	            <Label htmlFor="deletePluginConfirm" className="text-[#ededed]">
+	              Type <code className="rounded bg-[#111111] px-1 py-0.5">{deleteTarget?.slug}</code>{" "}
+	              to confirm
+	            </Label>
+	            <Input
+	              id="deletePluginConfirm"
+	              value={deleteConfirmText}
+	              onChange={(e) => setDeleteConfirmText(e.target.value)}
+	              placeholder={deleteTarget?.slug ?? ""}
+	              className="border-[#262626] bg-[#111111] text-white placeholder:text-[#666] focus:border-[#444] focus:ring-0"
+	            />
+	          </div>
+
+	          <DialogFooter className="gap-2 sm:gap-2">
+	            <Button
+	              variant="outline"
+	              onClick={() => {
+	                setDeleteTarget(null);
+	                setDeleteConfirmText("");
+	              }}
+	              disabled={busyPluginId === deleteTarget?.id}
+	              className="border-[#333] text-[#a1a1a1] hover:bg-[#1a1a1a] hover:text-white"
+	            >
+	              Cancel
+	            </Button>
+	            <Button
+	              onClick={() => {
+	                if (!deleteTarget) return;
+	                deletePlugin(deleteTarget.id);
+	              }}
+	              disabled={
+	                !deleteTarget ||
+	                deleteConfirmText.trim() !== deleteTarget.slug ||
+	                busyPluginId === deleteTarget.id
+	              }
+	              className="bg-[#ff4444] text-white hover:bg-[#e03c3c] font-semibold"
+	            >
+	              {busyPluginId === deleteTarget?.id ? "Deleting..." : "Delete Plugin"}
+	            </Button>
+	          </DialogFooter>
+	        </DialogContent>
+	      </Dialog>
+	    </div>
+	  );
 }
