@@ -9,6 +9,7 @@ export interface RetrievedChunk {
   similarity: number;
   documentId: string;
   documentName: string;
+  fileType: string;
   pageNumber: number | null;
   sectionTitle: string | null;
   chunkIndex: number;
@@ -32,6 +33,7 @@ export async function retrieveSources(
       similarity,
       documentId: knowledgeChunks.documentId,
       documentName: knowledgeDocuments.fileName,
+      fileType: knowledgeDocuments.fileType,
       pageNumber: knowledgeChunks.pageNumber,
       sectionTitle: knowledgeChunks.sectionTitle,
       chunkIndex: knowledgeChunks.chunkIndex,

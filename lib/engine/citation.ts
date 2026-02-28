@@ -5,6 +5,9 @@ export interface CitationResult {
   cleanedAnswer: string;
   citations: CitationEntry[];
   confidence: "high" | "medium" | "low";
+  usedSourceIndices: number[];
+  unresolvedRefs: number[];
+  totalRefs: number;
   /** Number of [Source N] refs that pointed to non-existent sources */
   phantomCount: number;
   /** Number of [Source N] refs that pointed to real sources (per-occurrence) */
@@ -17,6 +20,9 @@ export function processCitations(
 ): CitationResult {
   const citations: CitationEntry[] = [];
   let cleanedAnswer = answer;
+  const usedSourceIndices: number[] = [];
+  const unresolvedRefs: number[] = [];
+  let totalRefs = 0;
   let phantomCount = 0;
   let realRefCount = 0;
 
@@ -26,6 +32,7 @@ export function processCitations(
   const sourceRefs = answer.matchAll(/\[Source\s+(\d+)\]/gi);
 
   for (const match of sourceRefs) {
+    totalRefs += 1;
     const sourceIdx = parseInt(match[1]) - 1; // 1-based to 0-based
 
     if (sourceIdx >= 0 && sourceIdx < sources.length) {
@@ -33,11 +40,21 @@ export function processCitations(
       const source = sources[sourceIdx];
       const citationId = `src_${sourceIdx + 1}`;
 
+      if (!usedSourceIndices.includes(sourceIdx)) {
+        usedSourceIndices.push(sourceIdx);
+      }
+
       if (!seenIds.has(citationId)) {
         seenIds.add(citationId);
         citations.push({
           id: citationId,
           document: source.documentName,
+          documentId: source.documentId,
+          chunkId: source.id,
+          chunkIndex: source.chunkIndex,
+          sourceRank: sourceIdx + 1,
+          similarity: source.similarity,
+          fileType: source.fileType,
           page: source.pageNumber ?? undefined,
           section: source.sectionTitle ?? undefined,
           excerpt:
@@ -46,25 +63,39 @@ export function processCitations(
         });
       }
     } else {
-      // This [Source N] points to nothing — it's a phantom
+      // This [Source N] points to nothing — it's a phantom citation.
       phantomCount++;
+      const unresolvedRef = sourceIdx + 1;
+      if (!unresolvedRefs.includes(unresolvedRef)) {
+        unresolvedRefs.push(unresolvedRef);
+      }
       phantomRefs.push(match[0]);
     }
   }
 
-  // Strip ALL occurrences of each phantom citation from the answer text
-  // so users don't see broken references like [Source 15] when only 3 sources exist.
-  // Uses replaceAll to catch duplicates (AI may cite the same phantom twice).
+  // Strip phantom citation tags so users never see broken [Source N] markers.
   for (const ref of phantomRefs) {
     cleanedAnswer = cleanedAnswer.replaceAll(ref, "");
   }
 
-  // Clean up double spaces left behind after stripping
-  cleanedAnswer = cleanedAnswer.replace(/  +/g, " ").trim();
+  // Clean up spacing artifacts after tag stripping.
+  cleanedAnswer = cleanedAnswer
+    .replace(/  +/g, " ")
+    .replace(/\s+\./g, ".")
+    .trim();
 
   const confidence = computeConfidence(realRefCount, sources.length, phantomCount);
 
-  return { cleanedAnswer, citations, confidence, phantomCount, realRefCount };
+  return {
+    cleanedAnswer,
+    citations,
+    confidence,
+    usedSourceIndices,
+    unresolvedRefs,
+    totalRefs,
+    phantomCount,
+    realRefCount,
+  };
 }
 
 function computeConfidence(
@@ -72,16 +103,14 @@ function computeConfidence(
   sourceCount: number,
   phantomCount: number,
 ): "high" | "medium" | "low" {
-  // --- LOW: something is clearly wrong ---
-  if (sourceCount === 0) return "low";         // no sources in DB at all
-  if (realRefCount === 0) return "low";         // AI cited nothing real
-  if (phantomCount > realRefCount) return "low"; // more fake refs than real refs
+  // LOW: no source grounding or mostly broken citations.
+  if (sourceCount === 0) return "low";
+  if (realRefCount === 0) return "low";
+  if (phantomCount > realRefCount) return "low";
 
-  // --- HIGH: strong evidence, no fakes ---
-  // 2+ real references (occurrences, not unique) and zero phantoms
+  // HIGH: strong source usage with no phantom refs.
   if (realRefCount >= 2 && phantomCount === 0) return "high";
 
-  // --- MEDIUM: everything else ---
-  // Has real refs but also some phantoms, or only 1 real ref
+  // MEDIUM: partially grounded.
   return "medium";
 }
