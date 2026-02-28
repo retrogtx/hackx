@@ -6,6 +6,15 @@ import { eq, and } from "drizzle-orm";
 import { chunkText } from "@/lib/engine/chunker";
 import { embedTexts } from "@/lib/engine/embedding";
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_FILE_TYPES = [
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
+  "application/pdf",
+];
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -58,13 +67,21 @@ export async function POST(
     let rawText = text || "";
 
     if (file) {
-      if (file.type === "application/pdf") {
-        // For PDF, we'd normally use pdf-parse, but let's handle text extraction
-        // For hackathon, we accept the raw text content
-        rawText = await file.text();
-      } else {
-        rawText = await file.text();
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { error: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB` },
+          { status: 400 },
+        );
       }
+
+      if (file.type && !ALLOWED_FILE_TYPES.includes(file.type)) {
+        return NextResponse.json(
+          { error: `Unsupported file type: ${file.type}. Allowed: .txt, .md, .csv, .json, .pdf` },
+          { status: 400 },
+        );
+      }
+
+      rawText = await file.text();
     }
 
     if (!rawText.trim()) {

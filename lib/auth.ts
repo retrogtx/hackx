@@ -34,5 +34,6 @@ export async function requireUser() {
     })
     .returning();
 
+  if (!user) throw new Error("Failed to create or retrieve user record");
   return user;
 }

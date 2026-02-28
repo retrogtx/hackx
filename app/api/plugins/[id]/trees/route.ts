@@ -55,6 +55,37 @@ export async function POST(
       );
     }
 
+    // Validate treeData structure
+    if (
+      typeof treeData !== "object" ||
+      typeof treeData.rootNodeId !== "string" ||
+      typeof treeData.nodes !== "object" ||
+      treeData.nodes === null ||
+      !treeData.nodes[treeData.rootNodeId]
+    ) {
+      return NextResponse.json(
+        { error: "Invalid treeData: must have rootNodeId (string) and nodes (object) with the root node present" },
+        { status: 400 },
+      );
+    }
+
+    // Validate each node has required fields
+    for (const [nodeId, node] of Object.entries(treeData.nodes)) {
+      const n = node as Record<string, unknown>;
+      if (!n.id || !n.type || !n.label) {
+        return NextResponse.json(
+          { error: `Invalid node "${nodeId}": must have id, type, and label` },
+          { status: 400 },
+        );
+      }
+      if (!["condition", "action", "question"].includes(n.type as string)) {
+        return NextResponse.json(
+          { error: `Invalid node "${nodeId}": type must be "condition", "action", or "question"` },
+          { status: 400 },
+        );
+      }
+    }
+
     const [tree] = await db
       .insert(decisionTrees)
       .values({

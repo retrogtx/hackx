@@ -40,30 +40,44 @@ export async function POST(req: NextRequest) {
     }
 
     const baseSlug = slugify(name);
-    let slug = baseSlug;
-    let counter = 1;
-
-    // Ensure unique slug
-    while (true) {
-      const existing = await db.query.plugins.findFirst({
-        where: eq(plugins.slug, slug),
-      });
-      if (!existing) break;
-      slug = `${baseSlug}-${counter++}`;
+    if (!baseSlug) {
+      return NextResponse.json(
+        { error: "Plugin name must contain at least one alphanumeric character" },
+        { status: 400 },
+      );
     }
 
-    const [plugin] = await db
-      .insert(plugins)
-      .values({
-        creatorId: user.id,
-        name,
-        slug,
-        domain,
-        description: description || null,
-        systemPrompt,
-        citationMode: citationMode || "mandatory",
-      })
-      .returning();
+    // Retry loop handles race conditions on slug uniqueness
+    let plugin;
+    const MAX_SLUG_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
+      const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt}`;
+      const result = await db
+        .insert(plugins)
+        .values({
+          creatorId: user.id,
+          name,
+          slug,
+          domain,
+          description: description || null,
+          systemPrompt,
+          citationMode: citationMode || "mandatory",
+        })
+        .onConflictDoNothing({ target: plugins.slug })
+        .returning();
+
+      if (result.length > 0) {
+        plugin = result[0];
+        break;
+      }
+    }
+
+    if (!plugin) {
+      return NextResponse.json(
+        { error: "Could not generate a unique slug. Try a different name." },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json(plugin, { status: 201 });
   } catch (error) {
