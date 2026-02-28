@@ -1,7 +1,7 @@
 import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { Blocks, Key, FlaskConical, Store, Download, Users } from "lucide-react";
+import { Blocks, Key, FlaskConical, Store, Download, Users, BarChart3 } from "lucide-react";
 import { UserProfileDialog } from "./user-profile-dialog";
 import { UserSearch } from "./user-search";
 import { DashboardOnboardingTour } from "@/components/dashboard-onboarding-tour";
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/plugins?filter=downloaded", label: "Downloaded", icon: Download },
   { href: "/collaboration", label: "Collab Rooms", icon: Users },
   { href: "/marketplace", label: "Marketplace", icon: Store },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/api-keys", label: "API Keys", icon: Key },
 ];
 
@@ -66,6 +67,8 @@ export default async function DashboardLayout({
                     ? "nav-collaboration"
                   : item.href === "/marketplace"
                     ? "nav-marketplace"
+                    : item.href === "/analytics"
+                      ? "nav-analytics"
                     : item.href === "/api-keys"
                       ? "nav-api-keys"
                       : undefined

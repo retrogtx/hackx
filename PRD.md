@@ -157,6 +157,7 @@ A single expert can miss what it doesn't know. Collaboration Rooms bring multipl
 - [x] Marketplace browse page (`/marketplace`) — list plugins shared by creators, search/filter
 - [x] Marketplace plugin detail page (`/marketplace/[slug]`) — plugin info + download
 - [x] `/api/marketplace/[slug]/download` route — download shared plugin as JSON
+- [x] Usage analytics dashboard (`/analytics`) — query volume, latency, confidence breakdown, top sources, decision path usage
 - [ ] Error handling + loading states across all pages
 
 ### Phase 6: Expert Collaboration Rooms
