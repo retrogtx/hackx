@@ -60,6 +60,8 @@ export default async function DashboardLayout({
               data-tour={
                 item.href === "/plugins"
                   ? "nav-plugins"
+                  : item.href === "/plugins?filter=downloaded"
+                    ? "nav-downloads"
                   : item.href === "/collaboration"
                     ? "nav-collaboration"
                   : item.href === "/marketplace"

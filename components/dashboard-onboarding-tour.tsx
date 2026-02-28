@@ -28,6 +28,13 @@ const TOUR_STEPS: TourStep[] = [
     selector: '[data-tour="nav-plugins"]',
   },
   {
+    id: "downloads",
+    title: "Downloaded Plugins",
+    description:
+      "Open Downloaded to view plugins imported from Marketplace and manage them alongside your own plugins.",
+    selector: '[data-tour="nav-downloads"]',
+  },
+  {
     id: "collaboration",
     title: "Collab Rooms",
     description:
