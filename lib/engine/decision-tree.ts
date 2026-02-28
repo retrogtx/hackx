@@ -1,4 +1,5 @@
 import type { DecisionTreeData, DecisionNode } from "@/lib/db/schema";
+import { answerToKey } from "@/lib/decision-tree/answer-utils";
 
 export interface DecisionStep {
   nodeId: string;
@@ -37,15 +38,16 @@ export function executeDecisionTree(
     } else if (currentNode.type === "question") {
       const field = currentNode.question?.extractFrom;
       const answer = field ? extractedParams[field] : undefined;
+      const nextId = answer ? resolveQuestionChildId(currentNode, answer) : undefined;
 
-      if (answer && currentNode.childrenByAnswer?.[answer]) {
+      if (answer && nextId) {
         path.push({
           nodeId: currentNode.id,
           label: currentNode.label,
           type: "question",
           answer,
         });
-        currentNode = tree.nodes[currentNode.childrenByAnswer[answer]];
+        currentNode = tree.nodes[nextId];
       } else {
         // Can't resolve — record and stop
         path.push({
@@ -76,25 +78,79 @@ export function executeDecisionTree(
   };
 }
 
+function resolveQuestionChildId(
+  node: DecisionNode,
+  answer: string,
+): string | undefined {
+  const childrenByAnswer = node.childrenByAnswer;
+  if (!childrenByAnswer) return undefined;
+
+  // Fast path for trees that store raw answer keys.
+  if (childrenByAnswer[answer]) {
+    return childrenByAnswer[answer];
+  }
+
+  const normalizedAnswer = answerToKey(answer);
+  if (!normalizedAnswer) return undefined;
+
+  if (childrenByAnswer[normalizedAnswer]) {
+    return childrenByAnswer[normalizedAnswer];
+  }
+
+  // Backward compatibility with mixed or legacy key formatting.
+  for (const [storedAnswer, childId] of Object.entries(childrenByAnswer)) {
+    if (answerToKey(storedAnswer) === normalizedAnswer) {
+      return childId;
+    }
+  }
+
+  // Backward compatibility for legacy trees that stored question branches without options.
+  const normalizedOptions = (node.question?.options || [])
+    .map((option) => answerToKey(option))
+    .filter((option) => option !== "");
+  if (normalizedOptions.length === 0) {
+    if (childrenByAnswer.default) return childrenByAnswer.default;
+    if (childrenByAnswer.__default__) return childrenByAnswer.__default__;
+
+    const entries = Object.entries(childrenByAnswer);
+    if (entries.length === 1) {
+      return entries[0][1];
+    }
+  }
+
+  return undefined;
+}
+
 function evaluateCondition(
   condition: NonNullable<DecisionNode["condition"]>,
   value: string | undefined,
 ): boolean {
   if (value === undefined) return false;
+  const normalizedValue = value.trim().toLowerCase();
 
   switch (condition.operator) {
     case "eq":
-      return value.toLowerCase() === String(condition.value).toLowerCase();
+      return normalizedValue === String(condition.value).trim().toLowerCase();
     case "gt":
       return Number(value) > Number(condition.value);
     case "lt":
       return Number(value) < Number(condition.value);
     case "contains":
-      return value.toLowerCase().includes(String(condition.value).toLowerCase());
+      return normalizedValue.includes(String(condition.value).trim().toLowerCase());
     case "in":
-      return Array.isArray(condition.value)
-        ? condition.value.map((v) => v.toLowerCase()).includes(value.toLowerCase())
-        : false;
+      if (Array.isArray(condition.value)) {
+        return condition.value.map((v) => v.trim().toLowerCase()).includes(normalizedValue);
+      }
+
+      if (typeof condition.value === "string") {
+        return condition.value
+          .split(",")
+          .map((v) => v.trim().toLowerCase())
+          .filter((v) => v !== "")
+          .includes(normalizedValue);
+      }
+
+      return false;
     default:
       return false;
   }

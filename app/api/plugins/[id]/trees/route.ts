@@ -4,6 +4,14 @@ import { db } from "@/lib/db";
 import { plugins, decisionTrees } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
+function handleError(error: unknown) {
+  if (error instanceof Error && error.message === "Unauthorized") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const message = error instanceof Error ? error.message : "Internal server error";
+  return NextResponse.json({ error: message }, { status: 500 });
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -25,8 +33,8 @@ export async function GET(
       .where(eq(decisionTrees.pluginId, id));
 
     return NextResponse.json(trees);
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  } catch (error) {
+    return handleError(error);
   }
 }
 
@@ -67,7 +75,6 @@ export async function POST(
 
     return NextResponse.json(tree, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return handleError(error);
   }
 }
