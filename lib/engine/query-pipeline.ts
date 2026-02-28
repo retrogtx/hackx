@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, streamText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { db } from "@/lib/db";
 import { plugins, decisionTrees, queryLogs } from "@/lib/db/schema";
@@ -8,16 +8,15 @@ import { executeDecisionTree, type DecisionResult } from "./decision-tree";
 import { processCitations } from "./citation";
 import { applyHallucinationGuard } from "./hallucination-guard";
 
-const HALLUCINATION_GUARD_PROMPT = `
-CRITICAL RULES:
-1. ONLY use information from the provided source documents.
-2. For EVERY factual claim, include an inline citation: [Source N].
-3. If the source documents do NOT contain information to answer the question,
-   respond EXACTLY: "I don't have verified information on this topic in my
-   knowledge base. Please consult a qualified professional."
-4. NEVER fabricate citations or reference documents not provided.
-5. If partially answerable, answer what you can with citations and clearly
-   state what you cannot verify.
+const SOURCE_PRIORITY_PROMPT = `
+RULES:
+1. PRIORITISE the provided source documents. For claims from sources, cite with [Source N].
+2. You may supplement with your own knowledge or web search when the sources are
+   insufficient — but clearly distinguish sourced claims (cited) from general knowledge.
+3. NEVER fabricate source citations. Only use [Source N] for actual provided sources.
+4. If sources are relevant, lead with them. Add extra context from your knowledge after.
+5. If no sources are provided or none are relevant, answer from your own knowledge and
+   web search. Do NOT refuse to answer.
 `;
 
 const RETRIEVAL_THRESHOLD = 0.4;
@@ -116,8 +115,8 @@ export async function runQueryPipeline(
     ? `\nDecision Tree Analysis:\n${decisionResult.path.map((s) => `- ${s.label}: ${s.answer || s.result || (s.action?.recommendation ?? "")}`).join("\n")}`
     : "";
 
-  // 5. LLM generation
-  const systemPrompt = `${plugin.systemPrompt}\n\n${HALLUCINATION_GUARD_PROMPT}`;
+  // 5. LLM generation (GPT-5 with web search for supplementary info)
+  const systemPrompt = `${plugin.systemPrompt}\n\n${SOURCE_PRIORITY_PROMPT}`;
   const userMessage = `
 Source Documents:
 ${sourceContext || "No relevant sources found."}
@@ -125,12 +124,15 @@ ${decisionContext}
 
 User Question: ${query}
 
-Respond using the source documents above. Cite every claim with [Source N].`;
+Answer the question. Prioritise the source documents above and cite them with [Source N]. You may supplement with your own knowledge or web search if needed.`;
 
   const { text } = await generateText({
-    model: openai("gpt-4o"),
+    model: openai("gpt-5"),
     system: systemPrompt,
     prompt: userMessage,
+    tools: {
+      web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
+    },
   });
 
   // 6. Citation post-processing
@@ -229,6 +231,198 @@ Respond using the source documents above. Cite every claim with [Source N].`;
     confidence: guardedResult.confidence,
     pluginVersion: plugin.version,
   };
+}
+
+export async function streamQueryPipeline(
+  pluginSlug: string,
+  query: string,
+  apiKeyId?: string,
+  options?: { skipPublishCheck?: boolean; skipAuditLog?: boolean },
+): Promise<ReadableStream<Uint8Array>> {
+  const start = Date.now();
+  const encoder = new TextEncoder();
+
+  const plugin = await db.query.plugins.findFirst({
+    where: eq(plugins.slug, pluginSlug),
+  });
+  if (!plugin) throw new Error(`Plugin not found: ${pluginSlug}`);
+  if (!options?.skipPublishCheck && !plugin.isPublished) {
+    throw new Error(`Plugin is not published: ${pluginSlug}`);
+  }
+
+  function sse(data: Record<string, unknown>) {
+    return encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+  }
+
+  return new ReadableStream({
+    async start(controller) {
+      let fullText = "";
+      try {
+        controller.enqueue(sse({ type: "status", status: "searching_kb", message: "Searching knowledge base..." }));
+
+        const sources = await retrieveSources(query, plugin.id, 8, RETRIEVAL_THRESHOLD);
+        console.log(`[QueryPipeline:stream] Plugin: ${pluginSlug}, Query: "${query.slice(0, 80)}", Sources found: ${sources.length}`);
+
+        controller.enqueue(sse({
+          type: "status",
+          status: "kb_results",
+          message: sources.length > 0
+            ? `Found ${sources.length} relevant source${sources.length !== 1 ? "s" : ""}`
+            : "No matching sources found — using AI knowledge + web",
+          sourceCount: sources.length,
+        }));
+
+        let decisionResult: DecisionResult | null = null;
+        const activeTrees = await db.query.decisionTrees.findMany({
+          where: and(eq(decisionTrees.pluginId, plugin.id), eq(decisionTrees.isActive, true)),
+        });
+        if (activeTrees.length > 0) {
+          decisionResult = executeDecisionTree(activeTrees[0].treeData, extractQueryParams(query));
+          controller.enqueue(sse({ type: "status", status: "decision_tree", message: `Evaluated decision tree (${decisionResult.path.length} steps)` }));
+        }
+
+        const sourceContext = sources
+          .map((s, i) => `[Source ${i + 1}] (${s.documentName}${s.sectionTitle ? `, ${s.sectionTitle}` : ""})\n${s.content}`)
+          .join("\n\n---\n\n");
+
+        const decisionContext = decisionResult
+          ? `\nDecision Tree Analysis:\n${decisionResult.path.map((s) => `- ${s.label}: ${s.answer || s.result || (s.action?.recommendation ?? "")}`).join("\n")}`
+          : "";
+
+        const systemPrompt = `${plugin.systemPrompt}\n\n${SOURCE_PRIORITY_PROMPT}`;
+        const userMessage = `
+Source Documents:
+${sourceContext || "No relevant sources found."}
+${decisionContext}
+
+User Question: ${query}
+
+Answer the question. Prioritise the source documents above and cite them with [Source N]. You may supplement with your own knowledge or web search if needed.`;
+
+        const result = streamText({
+          model: openai("gpt-5"),
+          system: systemPrompt,
+          prompt: userMessage,
+          tools: {
+            web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
+          },
+        });
+
+        controller.enqueue(sse({ type: "status", status: "generating", message: "Generating response..." }));
+
+        for await (const part of result.fullStream) {
+          if (part.type === "text-delta") {
+            fullText += part.text;
+            controller.enqueue(sse({ type: "delta", text: part.text }));
+          } else if (part.type === "tool-call") {
+            controller.enqueue(sse({ type: "status", status: "web_search", message: "Searching the web..." }));
+          } else if (part.type === "tool-result") {
+            controller.enqueue(sse({ type: "status", status: "web_search_done", message: "Web search complete" }));
+          }
+        }
+
+        const citationResult = processCitations(fullText, sources);
+        const guardedResult = applyHallucinationGuard(citationResult);
+
+        const citedIndices = new Set(citationResult.usedSourceIndices);
+        const sourcesPanel: SourceCard[] = sources.map((source, i) => ({
+          id: `source_${i + 1}`,
+          rank: i + 1,
+          citationRef: `Source ${i + 1}`,
+          document: source.documentName,
+          fileType: source.fileType,
+          page: source.pageNumber ?? undefined,
+          section: source.sectionTitle ?? undefined,
+          excerpt: source.content.slice(0, 220) + (source.content.length > 220 ? "..." : ""),
+          similarity: Number(source.similarity.toFixed(3)),
+          cited: citedIndices.has(i),
+        }));
+
+        const sourceCoverage = sources.length > 0
+          ? Number((citationResult.usedSourceIndices.length / sources.length).toFixed(2))
+          : 0;
+        const trustedSourceCount = sources.filter((s) => s.similarity >= 0.6).length;
+        const trustNotes: string[] = [];
+        if (sources.length === 0) {
+          trustNotes.push("No supporting chunks were retrieved from the plugin knowledge base.");
+        } else {
+          trustNotes.push(
+            `Sources are retrieved only from this plugin's uploaded knowledge base (threshold >= ${RETRIEVAL_THRESHOLD}).`,
+          );
+        }
+        if (citationResult.unresolvedRefs.length > 0) {
+          trustNotes.push(
+            `The answer referenced unresolved citations: ${citationResult.unresolvedRefs.map((n) => `[Source ${n}]`).join(", ")}.`,
+          );
+        }
+        if (citationResult.usedSourceIndices.length === 0 && sources.length > 0) {
+          trustNotes.push("No retrieved source was explicitly cited in the final answer.");
+        }
+        if (citationResult.totalRefs > 0 && citationResult.unresolvedRefs.length === 0) {
+          trustNotes.push("All citation tags in the answer were resolved to retrieved source chunks.");
+        }
+
+        const trust: TrustInfo = {
+          sourceOfTruth: "plugin_knowledge_base",
+          retrievalThreshold: RETRIEVAL_THRESHOLD,
+          retrievedSourceCount: sources.length,
+          citedSourceCount: citationResult.usedSourceIndices.length,
+          sourceCoverage,
+          unresolvedCitationRefs: citationResult.unresolvedRefs,
+          trustedSourceCount,
+          trustLevel: computeTrustLevel({
+            unresolvedCount: citationResult.unresolvedRefs.length,
+            retrievedCount: sources.length,
+            citedCount: citationResult.usedSourceIndices.length,
+            trustedSourceCount,
+          }),
+          notes: trustNotes,
+        };
+
+        const decisionPath = decisionResult
+          ? decisionResult.path.map((s, i) => ({
+              step: i + 1,
+              node: s.nodeId,
+              label: s.label,
+              value: s.answer,
+              result: s.action?.recommendation,
+            }))
+          : [];
+
+        const latencyMs = Date.now() - start;
+        if (!options?.skipAuditLog) {
+          await db.insert(queryLogs).values({
+            pluginId: plugin.id,
+            apiKeyId: apiKeyId || null,
+            queryText: query,
+            responseText: guardedResult.cleanedAnswer,
+            citations: guardedResult.citations,
+            decisionPath,
+            confidence: guardedResult.confidence,
+            latencyMs,
+          });
+        }
+
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+          type: "done",
+          answer: guardedResult.cleanedAnswer,
+          citations: guardedResult.citations,
+          sources: sourcesPanel,
+          trust,
+          decisionPath,
+          confidence: guardedResult.confidence,
+          pluginVersion: plugin.version,
+        })}\n\n`));
+      } catch (err) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+          type: "error",
+          error: err instanceof Error ? err.message : "Stream error",
+        })}\n\n`));
+      } finally {
+        controller.close();
+      }
+    },
+  });
 }
 
 function extractQueryParams(query: string): Record<string, string> {

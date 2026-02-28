@@ -253,25 +253,7 @@ export default function ApiKeysPage() {
         </div>
       )}
 
-      <div className="mt-8 rounded-md border border-[#262626] bg-[#0a0a0a]">
-        <div className="border-b border-[#262626] p-6">
-          <h2 className="font-bold text-white">Usage Example</h2>
-          <p className="mt-1 text-sm text-[#a1a1a1]">
-            Use your API key to query any published plugin
-          </p>
-        </div>
-        <div className="p-6">
-          <pre className="overflow-x-auto rounded-lg border border-[#262626] bg-[#111111] p-4 text-sm text-[#ededed]">
-          {`curl -X POST ${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/api/v1/query \\
-  -H "Authorization: Bearer lx_your_key_here" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "plugin": "your-plugin-slug",
-    "query": "Your question here"
-  }'`}
-          </pre>
-        </div>
-      </div>
+      <ApiUsageExample />
 
       <Dialog
         open={!!deleteTarget}
@@ -321,6 +303,199 @@ export default function ApiKeysPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function ApiUsageExample() {
+  const [mode, setMode] = useState<"stream" | "json">("stream");
+  const [lang, setLang] = useState<"curl" | "typescript" | "python">("curl");
+  const [copied, setCopied] = useState(false);
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const key = "lx_your_key_here";
+  const plug = "your-plugin-slug";
+
+  function getSnippet() {
+    if (lang === "typescript") {
+      if (mode === "stream") {
+        return `import { Lexic } from "lexic-sdk";
+
+const lexic = new Lexic({
+  apiKey: "${key}",
+  baseUrl: "${baseUrl}",
+});
+
+for await (const event of lexic.queryStream({
+  plugin: "${plug}",
+  query: "Your question here",
+})) {
+  switch (event.type) {
+    case "status":
+      console.log(\`[\${event.status}] \${event.message}\`);
+      break;
+    case "delta":
+      process.stdout.write(event.text);
+      break;
+    case "done":
+      console.log("\\nCitations:", event.citations);
+      console.log("Confidence:", event.confidence);
+      break;
+  }
+}`;
+      }
+      return `import { Lexic } from "lexic-sdk";
+
+const lexic = new Lexic({
+  apiKey: "${key}",
+  baseUrl: "${baseUrl}",
+});
+
+const result = await lexic.query({
+  plugin: "${plug}",
+  query: "Your question here",
+});
+
+console.log(result.answer);
+console.log(result.citations);
+console.log(result.confidence);`;
+    }
+
+    if (lang === "python") {
+      if (mode === "stream") {
+        return `import requests, json
+
+resp = requests.post(
+    "${baseUrl}/api/v1/query",
+    headers={
+        "Authorization": "Bearer ${key}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    },
+    json={"plugin": "${plug}", "query": "Your question here", "stream": True},
+    stream=True,
+)
+
+for line in resp.iter_lines():
+    if line and line.startswith(b"data: "):
+        event = json.loads(line[6:])
+        if event["type"] == "status":
+            print(f"[{event['status']}] {event['message']}")
+        elif event["type"] == "delta":
+            print(event["text"], end="", flush=True)
+        elif event["type"] == "done":
+            print(f"\\nCitations: {event['citations']}")`;
+      }
+      return `import requests
+
+resp = requests.post(
+    "${baseUrl}/api/v1/query",
+    headers={
+        "Authorization": "Bearer ${key}",
+        "Content-Type": "application/json",
+    },
+    json={"plugin": "${plug}", "query": "Your question here"},
+)
+
+data = resp.json()
+print(data["answer"])
+print(data["citations"])
+print(data["confidence"])`;
+    }
+
+    if (mode === "stream") {
+      return `curl -N -X POST ${baseUrl}/api/v1/query \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "Content-Type: application/json" \\
+  -H "Accept: text/event-stream" \\
+  -d '{
+    "plugin": "${plug}",
+    "query": "Your question here",
+    "stream": true
+  }'`;
+    }
+    return `curl -X POST ${baseUrl}/api/v1/query \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "plugin": "${plug}",
+    "query": "Your question here"
+  }'`;
+  }
+
+  function copySnippet() {
+    navigator.clipboard.writeText(getSnippet());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="mt-8 rounded-md border border-[#262626] bg-[#0a0a0a]">
+      <div className="flex items-center justify-between border-b border-[#262626] p-6">
+        <div>
+          <h2 className="font-bold text-white">Usage Example</h2>
+          <p className="mt-1 text-sm text-[#a1a1a1]">
+            Use your API key to query any published plugin
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={copySnippet}
+          className="border-[#333] text-[#a1a1a1] hover:bg-[#1a1a1a] hover:text-white"
+        >
+          {copied ? (
+            <>
+              <Check className="mr-1.5 h-3 w-3 text-[#00d4aa]" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="mr-1.5 h-3 w-3" />
+              Copy
+            </>
+          )}
+        </Button>
+      </div>
+      <div className="p-6 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 rounded-md border border-[#262626] bg-[#111111] p-0.5">
+            {(["curl", "typescript", "python"] as const).map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => setLang(l)}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${lang === l ? "bg-[#262626] text-white" : "text-[#666] hover:text-[#a1a1a1]"}`}
+              >
+                {l === "curl" ? "cURL" : l === "typescript" ? "TypeScript" : "Python"}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 rounded-md border border-[#262626] bg-[#111111] p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode("stream")}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${mode === "stream" ? "bg-[#00d4aa]/20 text-[#00d4aa]" : "text-[#666] hover:text-[#a1a1a1]"}`}
+            >
+              Streaming
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("json")}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${mode === "json" ? "bg-[#262626] text-white" : "text-[#666] hover:text-[#a1a1a1]"}`}
+            >
+              JSON
+            </button>
+          </div>
+        </div>
+        <pre className="overflow-x-auto rounded-lg border border-[#262626] bg-[#111111] p-4 text-sm text-[#ededed]">
+          {getSnippet()}
+        </pre>
+        {mode === "stream" && (
+          <p className="text-xs text-[#555]">
+            Streaming returns real-time status updates ({'"searching_kb"'}, {'"web_search"'}, {'"generating"'}), text tokens, and final citations.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

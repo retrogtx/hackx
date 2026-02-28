@@ -3,10 +3,10 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { plugins } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { runQueryPipeline } from "@/lib/engine/query-pipeline";
+import { streamQueryPipeline } from "@/lib/engine/query-pipeline";
 
 // Sandbox route — uses Clerk auth instead of API key auth
-// Allows plugin owners to test their plugins before publishing
+// Allows plugin owners to test their plugins before publishing.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ pluginId: string }> },
@@ -15,7 +15,6 @@ export async function POST(
     const user = await requireUser();
     const { pluginId } = await params;
 
-    // Verify the user owns this plugin
     const plugin = await db.query.plugins.findFirst({
       where: and(eq(plugins.id, pluginId), eq(plugins.creatorId, user.id)),
     });
@@ -31,13 +30,18 @@ export async function POST(
       return NextResponse.json({ error: "Missing query" }, { status: 400 });
     }
 
-    // Reuse core pipeline to keep sandbox behavior aligned with production.
-    const result = await runQueryPipeline(plugin.slug, query, undefined, {
+    const stream = await streamQueryPipeline(plugin.slug, query, undefined, {
       skipPublishCheck: true,
       skipAuditLog: true,
     });
 
-    return NextResponse.json(result);
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });
