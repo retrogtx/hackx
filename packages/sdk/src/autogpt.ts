@@ -20,6 +20,7 @@ import type {
   CollaborationResult,
   CollaborationMode,
   CollaborationStreamEvent,
+  ReviewResult,
 } from "./types";
 
 export interface LexicAutoGPTConfig {
@@ -104,6 +105,65 @@ export class LexicAutoGPT {
   setPlugin(pluginSlug: string): void {
     this.plugin = pluginSlug;
   }
+
+  /** Convert to an AutoGPT review command. */
+  asReviewCommand(): AutoGPTCommand {
+    return {
+      name: `review_${this.plugin.replace(/-/g, "_")}`,
+      description: `Submit a document for expert review by the "${this.plugin}" plugin. Returns annotated findings.`,
+      parameters: {
+        document: {
+          type: "string",
+          description: "The document text to review",
+          required: true,
+        },
+      },
+      execute: async (args: Record<string, string>): Promise<string> => {
+        return this.executeReview(args.document);
+      },
+    };
+  }
+
+  /** Execute a review directly. Returns human-readable formatted text. */
+  async executeReview(document: string): Promise<string> {
+    try {
+      const result: ReviewResult = await this.client.review({
+        plugin: this.plugin,
+        document,
+        title: "AutoGPT Review",
+      });
+
+      return formatReviewForAutoGPT(result);
+    } catch (err) {
+      if (err instanceof LexicAPIError) {
+        return `Lexic Review Error (${err.status}): ${err.message}`;
+      }
+      return `Lexic Review Error: ${(err as Error).message}`;
+    }
+  }
+}
+
+function formatReviewForAutoGPT(result: ReviewResult): string {
+  const lines: string[] = [
+    `Expert Review (compliance: ${result.summary.overallCompliance}, confidence: ${result.confidence}):`,
+    `Document: ${result.documentTitle}`,
+    `Summary: ${result.summary.errorCount} errors, ${result.summary.warningCount} warnings, ${result.summary.infoCount} info, ${result.summary.passCount} pass`,
+  ];
+
+  const issues = result.annotations.filter((a) => a.severity !== "pass");
+  if (issues.length > 0) {
+    lines.push("", "Findings:");
+    for (const ann of issues) {
+      lines.push(`  [${ann.severity.toUpperCase()}] (lines ${ann.startLine}-${ann.endLine}) ${ann.issue}`);
+      if (ann.suggestedFix) lines.push(`    Fix: ${ann.suggestedFix}`);
+      if (ann.citations.length > 0) {
+        lines.push(`    Sources: ${ann.citations.map((c) => c.document).join(", ")}`);
+      }
+    }
+  }
+
+  lines.push("", `Review completed in ${result.latencyMs}ms`);
+  return lines.join("\n");
 }
 
 // ─── Collaboration Adapter ───────────────────────────────────────────

@@ -195,6 +195,47 @@ export const collaborationSessions = pgTable("collaboration_sessions", {
   index("cs_room_idx").on(table.roomId),
 ]);
 
+// ─── Review Logs ────────────────────────────────────────────────────
+
+export interface ReviewAnnotationData {
+  id: string;
+  segmentIndex: number;
+  startLine: number;
+  endLine: number;
+  originalText: string;
+  severity: "error" | "warning" | "info" | "pass";
+  category: string;
+  issue: string;
+  suggestedFix: string | null;
+  citations: CitationEntry[];
+  confidence: "high" | "medium" | "low";
+}
+
+export interface ReviewSummaryData {
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+  passCount: number;
+  overallCompliance: "compliant" | "partially-compliant" | "non-compliant";
+  topIssues: string[];
+}
+
+export const reviewLogs = pgTable("review_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pluginId: uuid("plugin_id").references(() => plugins.id).notNull(),
+  apiKeyId: uuid("api_key_id").references(() => apiKeys.id),
+  documentTitle: text("document_title").notNull(),
+  documentText: text("document_text").notNull(),
+  totalSegments: integer("total_segments").notNull(),
+  annotations: jsonb("annotations").default([]).$type<ReviewAnnotationData[]>(),
+  summary: jsonb("summary").$type<ReviewSummaryData>(),
+  confidence: text("confidence"),
+  latencyMs: integer("latency_ms"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("rl_plugin_idx").on(table.pluginId),
+]);
+
 // ─── Query Audit Log ────────────────────────────────────────────────
 
 export interface CitationEntry {
@@ -248,6 +289,7 @@ export const pluginsRelations = relations(plugins, ({ one, many }) => ({
   chunks: many(knowledgeChunks),
   decisionTrees: many(decisionTrees),
   queryLogs: many(queryLogs),
+  reviewLogs: many(reviewLogs),
 }));
 
 export const knowledgeDocumentsRelations = relations(knowledgeDocuments, ({ one, many }) => ({
@@ -271,6 +313,11 @@ export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
 export const queryLogsRelations = relations(queryLogs, ({ one }) => ({
   plugin: one(plugins, { fields: [queryLogs.pluginId], references: [plugins.id] }),
   apiKey: one(apiKeys, { fields: [queryLogs.apiKeyId], references: [apiKeys.id] }),
+}));
+
+export const reviewLogsRelations = relations(reviewLogs, ({ one }) => ({
+  plugin: one(plugins, { fields: [reviewLogs.pluginId], references: [plugins.id] }),
+  apiKey: one(apiKeys, { fields: [reviewLogs.apiKeyId], references: [apiKeys.id] }),
 }));
 
 export const collaborationRoomsRelations = relations(collaborationRooms, ({ one, many }) => ({

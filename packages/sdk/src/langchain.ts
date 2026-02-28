@@ -22,6 +22,7 @@ import type {
   CollaborationResult,
   CollaborationMode,
   CollaborationStreamEvent,
+  ReviewResult,
 } from "./types";
 
 export interface LexicToolConfig {
@@ -209,6 +210,90 @@ function formatCollaborationForAgent(result: CollaborationResult): string {
   }
 
   return JSON.stringify(output);
+}
+
+// ─── Review Tool ─────────────────────────────────────────────────────
+
+export interface LexicReviewToolConfig {
+  apiKey: string;
+  plugin: string;
+  baseUrl?: string;
+  name?: string;
+  description?: string;
+}
+
+/**
+ * A LangChain-compatible tool for expert document review.
+ * Submits a document for review and returns annotated findings with citations.
+ */
+export class LexicReviewTool {
+  name: string;
+  description: string;
+
+  private client: Lexic;
+  private plugin: string;
+
+  constructor(config: LexicReviewToolConfig) {
+    this.client = new Lexic({
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+    });
+    this.plugin = config.plugin;
+    this.name = config.name || `lexic_review_${config.plugin.replace(/-/g, "_")}`;
+    this.description =
+      config.description ||
+      `Review a document using the "${config.plugin}" expert plugin. Returns annotated compliance findings with citations.`;
+  }
+
+  async call(input: string): Promise<string> {
+    return this._call(input);
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const result: ReviewResult = await this.client.review({
+        plugin: this.plugin,
+        document: input,
+        title: "LangChain Review",
+      });
+
+      return formatReviewForAgent(result);
+    } catch (err) {
+      if (err instanceof LexicAPIError) {
+        return JSON.stringify({ error: err.message, status: err.status });
+      }
+      return JSON.stringify({ error: (err as Error).message });
+    }
+  }
+
+  setPlugin(pluginSlug: string): void {
+    this.plugin = pluginSlug;
+  }
+}
+
+function formatReviewForAgent(result: ReviewResult): string {
+  const issues = result.annotations
+    .filter((a) => a.severity !== "pass")
+    .map((a) => ({
+      severity: a.severity,
+      category: a.category,
+      issue: a.issue,
+      lines: `${a.startLine}-${a.endLine}`,
+      suggestedFix: a.suggestedFix,
+      citations: a.citations.map((c) => ({ id: c.id, document: c.document, excerpt: c.excerpt })),
+    }));
+
+  return JSON.stringify({
+    documentTitle: result.documentTitle,
+    compliance: result.summary.overallCompliance,
+    confidence: result.confidence,
+    summary: {
+      errors: result.summary.errorCount,
+      warnings: result.summary.warningCount,
+      info: result.summary.infoCount,
+    },
+    issues,
+  });
 }
 
 // ─── Single-Expert Formatting ────────────────────────────────────────

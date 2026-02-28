@@ -51,3 +51,42 @@ export async function retrieveSources(
 
   return results;
 }
+
+/**
+ * Retrieve sources using a pre-computed embedding vector.
+ * Used by the review pipeline which batch-embeds segments via embedTexts().
+ */
+export async function retrieveSourcesByEmbedding(
+  embedding: number[],
+  pluginId: string,
+  topK: number = 8,
+  threshold: number = 0.3,
+): Promise<RetrievedChunk[]> {
+  const distance = cosineDistance(knowledgeChunks.embedding, embedding);
+  const similarity = sql<number>`1 - (${distance})`;
+
+  const results = await db
+    .select({
+      id: knowledgeChunks.id,
+      content: knowledgeChunks.content,
+      similarity,
+      documentId: knowledgeChunks.documentId,
+      documentName: knowledgeDocuments.fileName,
+      fileType: knowledgeDocuments.fileType,
+      pageNumber: knowledgeChunks.pageNumber,
+      sectionTitle: knowledgeChunks.sectionTitle,
+      chunkIndex: knowledgeChunks.chunkIndex,
+    })
+    .from(knowledgeChunks)
+    .innerJoin(knowledgeDocuments, eq(knowledgeChunks.documentId, knowledgeDocuments.id))
+    .where(
+      and(
+        eq(knowledgeChunks.pluginId, pluginId),
+        gt(similarity, threshold),
+      ),
+    )
+    .orderBy(distance)
+    .limit(topK);
+
+  return results;
+}

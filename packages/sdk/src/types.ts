@@ -102,6 +102,55 @@ export interface CollaborationResult {
   latencyMs: number;
 }
 
+// ─── Review Types ─────────────────────────────────────────────────────
+
+export interface ReviewOptions {
+  plugin?: string;
+  document: string;
+  title?: string;
+  stream?: boolean;
+}
+
+export interface ReviewAnnotation {
+  id: string;
+  segmentIndex: number;
+  startLine: number;
+  endLine: number;
+  originalText: string;
+  severity: "error" | "warning" | "info" | "pass";
+  category: string;
+  issue: string;
+  suggestedFix: string | null;
+  citations: Citation[];
+  confidence: "high" | "medium" | "low";
+}
+
+export interface ReviewSummary {
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+  passCount: number;
+  overallCompliance: "compliant" | "partially-compliant" | "non-compliant";
+  topIssues: string[];
+}
+
+export interface ReviewResult {
+  documentTitle: string;
+  totalSegments: number;
+  annotations: ReviewAnnotation[];
+  summary: ReviewSummary;
+  confidence: "high" | "medium" | "low";
+  pluginVersion: string;
+  latencyMs: number;
+}
+
+export type ReviewStreamEvent =
+  | { type: "status"; status: string; message: string }
+  | { type: "annotation"; annotation: ReviewAnnotation }
+  | { type: "batch_complete"; batchIndex: number; totalBatches: number }
+  | { type: "done"; documentTitle: string; totalSegments: number; annotations: ReviewAnnotation[]; summary: ReviewSummary; confidence: "high" | "medium" | "low"; pluginVersion: string; latencyMs: number }
+  | { type: "error"; error: string };
+
 export type CollaborationStreamEvent =
   | { type: "status"; status: string; message: string }
   | { type: "experts_resolved"; experts: Array<{ slug: string; name: string; domain: string; sourceCount: number; hasDecisionTree: boolean }> }

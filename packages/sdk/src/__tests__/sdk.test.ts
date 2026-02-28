@@ -776,6 +776,338 @@ console.log("\n--- Collaboration type shape checks ---");
   assert(true, "all collaboration type shapes compile correctly");
 }
 
+// ── Test: review() — validation ───────────────────────────────────────
+
+console.log("\n--- review() validation ---");
+
+{
+  const client = new Lexic({ apiKey: "lx_test" });
+  try {
+    await client.review({ document: "test doc" });
+    assert(false, "should throw when no plugin set");
+  } catch (e) {
+    assert((e as Error).message.includes("no plugin specified"), "review: throws when no plugin");
+  }
+}
+
+// ── Test: review() — normalizes well-formed response ─────────────────
+
+console.log("\n--- review() response normalization ---");
+
+{
+  const fullReviewResponse = {
+    documentTitle: "spec.md",
+    totalSegments: 3,
+    annotations: [
+      {
+        id: "ann_0",
+        segmentIndex: 0,
+        startLine: 1,
+        endLine: 5,
+        originalText: "The API uses HTTP/1.0",
+        severity: "error",
+        category: "non-compliance",
+        issue: "Should use HTTP/2 per guidelines",
+        suggestedFix: "Upgrade to HTTP/2",
+        citations: [{ id: "src_1", document: "Guidelines.pdf", page: 12, section: "Transport", excerpt: "All APIs must use HTTP/2..." }],
+        confidence: "high",
+      },
+      {
+        id: "ann_1",
+        segmentIndex: 1,
+        startLine: 6,
+        endLine: 10,
+        originalText: "Auth uses basic auth",
+        severity: "warning",
+        category: "best-practice",
+        issue: "Consider OAuth2",
+        suggestedFix: null,
+        citations: [],
+        confidence: "medium",
+      },
+    ],
+    summary: {
+      errorCount: 1,
+      warningCount: 1,
+      infoCount: 0,
+      passCount: 1,
+      overallCompliance: "non-compliant",
+      topIssues: ["Should use HTTP/2 per guidelines"],
+    },
+    confidence: "high",
+    pluginVersion: "1.0.0",
+    latencyMs: 3200,
+  };
+
+  const restore = makeMockServer(fullReviewResponse);
+  const client = new Lexic({ apiKey: "lx_test" });
+  const result = await client.review({ plugin: "test-plugin", document: "some doc text" });
+
+  assert(result.documentTitle === "spec.md", "review: documentTitle preserved");
+  assert(result.totalSegments === 3, "review: totalSegments preserved");
+  assert(result.annotations.length === 2, "review: two annotations");
+  assert(result.annotations[0].severity === "error", "review: first annotation severity");
+  assert(result.annotations[0].issue === "Should use HTTP/2 per guidelines", "review: first annotation issue");
+  assert(result.annotations[0].citations.length === 1, "review: first annotation has citation");
+  assert(result.annotations[0].citations[0].document === "Guidelines.pdf", "review: citation document");
+  assert(result.annotations[1].suggestedFix === null, "review: null suggestedFix preserved");
+  assert(result.summary.errorCount === 1, "review: summary errorCount");
+  assert(result.summary.overallCompliance === "non-compliant", "review: compliance");
+  assert(result.summary.topIssues.length === 1, "review: topIssues");
+  assert(result.confidence === "high", "review: overall confidence");
+  assert(result.pluginVersion === "1.0.0", "review: pluginVersion");
+  assert(result.latencyMs === 3200, "review: latencyMs");
+  restore();
+}
+
+// ── Test: review() — normalizes malformed response ───────────────────
+
+console.log("\n--- review() handles malformed responses ---");
+
+{
+  const restore = makeMockServer({ documentTitle: "test" });
+  const client = new Lexic({ apiKey: "lx_test" });
+  const result = await client.review({ plugin: "test-plugin", document: "text" });
+
+  assert(result.documentTitle === "test", "review malformed: documentTitle preserved");
+  assert(result.totalSegments === 0, "review malformed: totalSegments defaults to 0");
+  assert(Array.isArray(result.annotations) && result.annotations.length === 0, "review malformed: annotations defaults to []");
+  assert(result.summary.errorCount === 0, "review malformed: summary defaults errorCount 0");
+  assert(result.summary.overallCompliance === "non-compliant", "review malformed: compliance defaults to non-compliant");
+  assert(result.confidence === "low", "review malformed: confidence defaults to low");
+  assert(result.pluginVersion === "unknown", "review malformed: pluginVersion defaults to unknown");
+  restore();
+}
+
+{
+  const restore = makeMockServer({});
+  const client = new Lexic({ apiKey: "lx_test" });
+  const result = await client.review({ plugin: "test-plugin", document: "text" });
+
+  assert(result.documentTitle === "", "review empty: documentTitle is empty string");
+  assert(result.latencyMs === 0, "review empty: latencyMs defaults to 0");
+  restore();
+}
+
+// ── Test: review() — error handling ──────────────────────────────────
+
+console.log("\n--- review() error handling ---");
+
+{
+  const restore = makeMockServer({ error: "Plugin not found" }, 404);
+  const client = new Lexic({ apiKey: "lx_test" });
+  try {
+    await client.review({ plugin: "bad-plugin", document: "text" });
+    assert(false, "should throw on 404");
+  } catch (e) {
+    assert(e instanceof LexicAPIError, "review error: throws LexicAPIError");
+    assert((e as LexicAPIError).status === 404, "review error: status is 404");
+    assert((e as LexicAPIError).message === "Plugin not found", "review error: message from body");
+  }
+  restore();
+}
+
+// ── Test: review() — sends correct request body ──────────────────────
+
+console.log("\n--- review() request body ---");
+
+{
+  let capturedBody: Record<string, unknown> | null = null;
+  let capturedUrl = "";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = typeof url === "string" ? url : url.toString();
+    capturedBody = JSON.parse(init?.body as string);
+    return { ok: true, status: 200, json: async () => ({ documentTitle: "ok", annotations: [], summary: {} }) } as Response;
+  };
+
+  const client = new Lexic({ apiKey: "lx_test" });
+  await client.review({ plugin: "my-plugin", document: "doc content", title: "My Doc" });
+
+  assert(capturedUrl.includes("/api/v1/review"), "review: calls review endpoint");
+  const body = capturedBody!;
+  assert(body.plugin === "my-plugin", "review body: has plugin");
+  assert(body.document === "doc content", "review body: has document");
+  assert(body.title === "My Doc", "review body: has title");
+
+  globalThis.fetch = originalFetch;
+}
+
+// ── Test: reviewStream() — SSE parsing ───────────────────────────────
+
+console.log("\n--- reviewStream() SSE parsing ---");
+
+{
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const events = [
+      `data: ${JSON.stringify({ type: "status", status: "segmenting", message: "Segmenting..." })}\n\n`,
+      `data: ${JSON.stringify({ type: "annotation", annotation: { id: "ann_0", segmentIndex: 0, startLine: 1, endLine: 3, originalText: "text", severity: "warning", category: "best-practice", issue: "test issue", suggestedFix: null, citations: [], confidence: "medium" } })}\n\n`,
+      `data: ${JSON.stringify({ type: "batch_complete", batchIndex: 0, totalBatches: 1 })}\n\n`,
+      `data: ${JSON.stringify({ type: "done", documentTitle: "test", totalSegments: 1, annotations: [], summary: { errorCount: 0, warningCount: 1, infoCount: 0, passCount: 0, overallCompliance: "partially-compliant", topIssues: [] }, confidence: "medium", pluginVersion: "1.0.0", latencyMs: 500 })}\n\n`,
+    ];
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const ev of events) controller.enqueue(encoder.encode(ev));
+        controller.close();
+      },
+    });
+    return { ok: true, status: 200, body: stream } as Response;
+  };
+
+  const client = new Lexic({ apiKey: "lx_test" });
+  const collectedTypes: string[] = [];
+
+  for await (const event of client.reviewStream({ plugin: "test-plugin", document: "test" })) {
+    collectedTypes.push(event.type);
+    if (event.type === "annotation") {
+      assert(event.annotation.severity === "warning", "reviewStream: annotation severity");
+      assert(event.annotation.issue === "test issue", "reviewStream: annotation issue");
+    }
+    if (event.type === "done") {
+      assert(event.confidence === "medium", "reviewStream done: confidence");
+      assert(event.pluginVersion === "1.0.0", "reviewStream done: pluginVersion");
+    }
+  }
+
+  assert(collectedTypes.includes("status"), "reviewStream: received status event");
+  assert(collectedTypes.includes("annotation"), "reviewStream: received annotation event");
+  assert(collectedTypes.includes("batch_complete"), "reviewStream: received batch_complete event");
+  assert(collectedTypes.includes("done"), "reviewStream: received done event");
+
+  globalThis.fetch = originalFetch;
+}
+
+// ── Test: LangChain review adapter ───────────────────────────────────
+
+console.log("\n--- LangChain review adapter ---");
+
+{
+  const { LexicReviewTool } = await import("../langchain");
+
+  const reviewResponse = {
+    documentTitle: "api-spec.md",
+    totalSegments: 2,
+    annotations: [
+      { id: "ann_0", segmentIndex: 0, startLine: 1, endLine: 5, originalText: "text", severity: "error", category: "non-compliance", issue: "Missing auth", suggestedFix: "Add OAuth2", citations: [{ id: "s1", document: "Standard.pdf", excerpt: "All endpoints..." }], confidence: "high" },
+    ],
+    summary: { errorCount: 1, warningCount: 0, infoCount: 0, passCount: 1, overallCompliance: "non-compliant", topIssues: ["Missing auth"] },
+    confidence: "high",
+    pluginVersion: "1.0.0",
+    latencyMs: 2000,
+  };
+
+  const restore = makeMockServer(reviewResponse);
+  const tool = new LexicReviewTool({ apiKey: "lx_test", plugin: "test-plugin" });
+
+  assert(tool.name === "lexic_review_test_plugin", "review langchain: default name");
+
+  const output = await tool.call("document content here");
+  const parsed = JSON.parse(output);
+
+  assert(parsed.documentTitle === "api-spec.md", "review langchain: documentTitle");
+  assert(parsed.compliance === "non-compliant", "review langchain: compliance");
+  assert(parsed.confidence === "high", "review langchain: confidence");
+  assert(parsed.summary.errors === 1, "review langchain: error count");
+  assert(parsed.issues.length === 1, "review langchain: one issue");
+  assert(parsed.issues[0].severity === "error", "review langchain: issue severity");
+  assert(parsed.issues[0].suggestedFix === "Add OAuth2", "review langchain: suggestedFix");
+  restore();
+}
+
+// ── Test: AutoGPT review adapter ─────────────────────────────────────
+
+console.log("\n--- AutoGPT review adapter ---");
+
+{
+  const { LexicAutoGPT } = await import("../autogpt");
+
+  const reviewResponse = {
+    documentTitle: "contract.md",
+    totalSegments: 3,
+    annotations: [
+      { id: "ann_0", segmentIndex: 0, startLine: 1, endLine: 5, originalText: "text", severity: "error", category: "non-compliance", issue: "Missing clause 4.2", suggestedFix: "Add clause 4.2", citations: [{ id: "s1", document: "Template.pdf", excerpt: "clause..." }], confidence: "high" },
+      { id: "ann_1", segmentIndex: 1, startLine: 6, endLine: 10, originalText: "text", severity: "pass", category: "compliance", issue: "No issues", suggestedFix: null, citations: [], confidence: "high" },
+    ],
+    summary: { errorCount: 1, warningCount: 0, infoCount: 0, passCount: 2, overallCompliance: "non-compliant", topIssues: ["Missing clause 4.2"] },
+    confidence: "high",
+    pluginVersion: "1.0.0",
+    latencyMs: 4000,
+  };
+
+  const restore = makeMockServer(reviewResponse);
+  const adapter = new LexicAutoGPT({ apiKey: "lx_test", plugin: "test-plugin" });
+
+  const cmd = adapter.asReviewCommand();
+  assert(cmd.name === "review_test_plugin", "review autogpt: command name from slug");
+  assert(cmd.parameters.document.required === true, "review autogpt: document param required");
+
+  const output = await adapter.executeReview("document text");
+  assert(output.includes("Expert Review"), "review autogpt: header line");
+  assert(output.includes("compliance: non-compliant"), "review autogpt: compliance");
+  assert(output.includes("confidence: high"), "review autogpt: confidence");
+  assert(output.includes("1 errors"), "review autogpt: error count");
+  assert(output.includes("[ERROR]"), "review autogpt: severity label");
+  assert(output.includes("Missing clause 4.2"), "review autogpt: issue text");
+  assert(output.includes("Fix: Add clause 4.2"), "review autogpt: suggested fix");
+  assert(output.includes("Template.pdf"), "review autogpt: citation source");
+  assert(output.includes("4000ms"), "review autogpt: latency");
+  restore();
+}
+
+// ── Test: Review type shapes compile correctly ───────────────────────
+
+console.log("\n--- Review type shape checks ---");
+
+{
+  void ({
+    plugin: "test",
+    document: "doc text",
+    title: "My Doc",
+  } satisfies import("../types").ReviewOptions);
+
+  void ({
+    id: "ann_0",
+    segmentIndex: 0,
+    startLine: 1,
+    endLine: 5,
+    originalText: "text",
+    severity: "error",
+    category: "non-compliance",
+    issue: "test",
+    suggestedFix: null,
+    citations: [],
+    confidence: "high",
+  } satisfies import("../types").ReviewAnnotation);
+
+  void ({
+    errorCount: 1,
+    warningCount: 0,
+    infoCount: 0,
+    passCount: 0,
+    overallCompliance: "non-compliant",
+    topIssues: ["test"],
+  } satisfies import("../types").ReviewSummary);
+
+  void ({
+    documentTitle: "test",
+    totalSegments: 1,
+    annotations: [],
+    summary: { errorCount: 0, warningCount: 0, infoCount: 0, passCount: 1, overallCompliance: "compliant", topIssues: [] },
+    confidence: "high",
+    pluginVersion: "1.0.0",
+    latencyMs: 100,
+  } satisfies import("../types").ReviewResult);
+
+  void ({ type: "status", status: "segmenting", message: "Segmenting..." } satisfies import("../types").ReviewStreamEvent);
+  void ({ type: "annotation", annotation: { id: "a", segmentIndex: 0, startLine: 1, endLine: 1, originalText: "", severity: "info", category: "", issue: "", suggestedFix: null, citations: [], confidence: "low" } } satisfies import("../types").ReviewStreamEvent);
+  void ({ type: "batch_complete", batchIndex: 0, totalBatches: 1 } satisfies import("../types").ReviewStreamEvent);
+  void ({ type: "error", error: "oops" } satisfies import("../types").ReviewStreamEvent);
+
+  assert(true, "all review type shapes compile correctly");
+}
+
 // ── Summary ──────────────────────────────────────────────────────────
 
 console.log(`\n${"=".repeat(50)}`);

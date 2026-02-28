@@ -173,6 +173,18 @@ A single expert can miss what it doesn't know. Collaboration Rooms bring multipl
 - [x] Sidebar navigation — added "Collab Rooms" to dashboard nav
 - [x] Middleware — protected `/collaboration` and `/api/collaboration-rooms` routes
 
+### Phase 7: Expert Review (Document Review Feature)
+- [x] Database schema — `reviewLogs` table with annotations (jsonb), summary (jsonb), relations
+- [x] Engine — `lib/engine/review.ts` with `segmentDocument()`, `runReviewPipeline()`, `streamReviewPipeline()`
+- [x] API route — Clerk-auth review endpoint (`POST /api/plugins/[id]/review`) — SSE streaming
+- [x] API route — API-key-auth review endpoint (`POST /api/v1/review`) — JSON + SSE streaming
+- [x] Dashboard UI — Plugin detail page 5th card "Expert Review" with ClipboardCheck icon
+- [x] Dashboard UI — Review page (`/plugins/[id]/review`) — upload, progress, split-pane annotated view
+- [x] SDK types — `ReviewOptions`, `ReviewAnnotation`, `ReviewSummary`, `ReviewResult`, `ReviewStreamEvent`
+- [x] SDK client — `review()` and `reviewStream()` methods with normalization
+- [x] SDK adapters — `LexicReviewTool` (LangChain), `asReviewCommand()` (AutoGPT)
+- [x] SDK tests — 112 new tests (181 total, all passing)
+
 ### Stretch Goals
 - [ ] Visual drag-and-drop decision tree editor
 - [ ] Plugin ratings and reviews

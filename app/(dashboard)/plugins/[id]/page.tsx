@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { plugins, knowledgeDocuments, decisionTrees, queryLogs } from "@/lib/db/schema";
 import { eq, and, count } from "drizzle-orm";
-import { ArrowLeft, Upload, GitBranch, MessageSquare, Globe } from "lucide-react";
+import { ArrowLeft, Upload, GitBranch, MessageSquare, Globe, ClipboardCheck } from "lucide-react";
 import { PublishButton } from "./publish-button";
 import { ShareQrButton } from "./share-qr-button";
 import { PluginSettings } from "./plugin-settings";
@@ -67,9 +67,9 @@ export default async function PluginDetailPage({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Link href={`/plugins/${id}/knowledge`}>
-          <div className="group rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Link href={`/plugins/${id}/knowledge`} className="block">
+          <div className="group h-full rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
             <Upload className="mb-3 h-8 w-8 text-[#3b82f6]" />
             <h3 className="font-bold text-white">Knowledge Base</h3>
             <p className="mt-1 text-sm text-[#a1a1a1]">
@@ -78,8 +78,8 @@ export default async function PluginDetailPage({
           </div>
         </Link>
 
-        <Link href={`/plugins/${id}/trees`}>
-          <div className="group rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
+        <Link href={`/plugins/${id}/trees`} className="block">
+          <div className="group h-full rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
             <GitBranch className="mb-3 h-8 w-8 text-[#00d4aa]" />
             <h3 className="font-bold text-white">Decision Trees</h3>
             <p className="mt-1 text-sm text-[#a1a1a1]">
@@ -88,15 +88,23 @@ export default async function PluginDetailPage({
           </div>
         </Link>
 
-        <Link href={`/plugins/${id}/sandbox`}>
-          <div className="group rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
+        <Link href={`/plugins/${id}/sandbox`} className="block">
+          <div className="group h-full rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
             <MessageSquare className="mb-3 h-8 w-8 text-[#a855f7]" />
             <h3 className="font-bold text-white">Test Sandbox</h3>
             <p className="mt-1 text-sm text-[#a1a1a1]">Chat with your plugin</p>
           </div>
         </Link>
 
-        <div className="rounded-md border border-[#262626] bg-[#0a0a0a] p-5">
+        <Link href={`/plugins/${id}/review`} className="block">
+          <div className="group h-full rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
+            <ClipboardCheck className="mb-3 h-8 w-8 text-[#ef4444]" />
+            <h3 className="font-bold text-white">Expert Review</h3>
+            <p className="mt-1 text-sm text-[#a1a1a1]">Review documents for compliance</p>
+          </div>
+        </Link>
+
+        <div className="h-full rounded-md border border-[#262626] bg-[#0a0a0a] p-5">
           <Globe className="mb-3 h-8 w-8 text-[#f59e0b]" />
           <h3 className="font-bold text-white">Queries</h3>
           <p className="mt-1 text-sm text-[#a1a1a1]">

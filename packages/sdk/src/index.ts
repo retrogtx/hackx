@@ -9,12 +9,17 @@ import type {
   CollaborateOptions,
   CollaborationResult,
   CollaborationStreamEvent,
+  ReviewOptions,
+  ReviewResult,
+  ReviewAnnotation,
+  ReviewStreamEvent,
 } from "./types";
 
 export type {
   LexicConfig, QueryOptions, QueryRequestOptions, QueryResult, Citation, DecisionStep, LexicError, StreamEvent,
   CollaborateOptions, CollaborationResult, CollaborationStreamEvent, CollaborationMode,
   ExpertResponse, CollaborationRound, ConsensusResult, ConflictEntry,
+  ReviewOptions, ReviewResult, ReviewAnnotation, ReviewSummary, ReviewStreamEvent,
 } from "./types";
 
 const DEFAULT_BASE_URL = "https://dawk-ps2.vercel.app";
@@ -441,6 +446,178 @@ export class Lexic {
       clearTimeout(timeoutId);
     }
   }
+
+  /**
+   * Submit a document for expert review. Returns annotations with citations.
+   */
+  async review(options: ReviewOptions): Promise<ReviewResult> {
+    const plugin = options.plugin || this.activePlugin;
+    if (!plugin) {
+      throw new Error(
+        "Lexic: no plugin specified. Pass `plugin` in review options or call setActivePlugin() first.",
+      );
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout * 2);
+
+    try {
+      const body: Record<string, unknown> = {
+        plugin,
+        document: options.document,
+        title: options.title || "Untitled",
+      };
+
+      const res = await fetch(`${this.baseUrl}/api/v1/review`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as LexicError;
+        throw new LexicAPIError(errBody.error || `HTTP ${res.status}`, res.status);
+      }
+
+      const raw = (await res.json()) as Record<string, unknown>;
+      return normalizeReviewResult(raw);
+    } catch (err) {
+      if (err instanceof LexicAPIError) throw err;
+      if ((err as Error).name === "AbortError") {
+        throw new LexicAPIError(`Request timed out after ${this.timeout * 2}ms`, 408);
+      }
+      throw new LexicAPIError((err as Error).message || "Network error", 0);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Stream a document review. Yields events as annotations are found:
+   *   - status         → progress updates
+   *   - annotation     → individual finding
+   *   - batch_complete → batch progress
+   *   - done           → final result with all annotations and summary
+   *   - error          → something went wrong
+   */
+  async *reviewStream(options: ReviewOptions): AsyncGenerator<ReviewStreamEvent> {
+    const plugin = options.plugin || this.activePlugin;
+    if (!plugin) {
+      throw new Error(
+        "Lexic: no plugin specified. Pass `plugin` in review options or call setActivePlugin() first.",
+      );
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout * 2);
+
+    try {
+      const body: Record<string, unknown> = {
+        plugin,
+        document: options.document,
+        title: options.title || "Untitled",
+        stream: true,
+      };
+
+      const res = await fetch(`${this.baseUrl}/api/v1/review`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as LexicError;
+        throw new LexicAPIError(errBody.error || `HTTP ${res.status}`, res.status);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new LexicAPIError("No response stream", 0);
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            yield JSON.parse(line.slice(6)) as ReviewStreamEvent;
+          } catch { /* skip */ }
+        }
+      }
+    } catch (err) {
+      if (err instanceof LexicAPIError) throw err;
+      if ((err as Error).name === "AbortError") {
+        throw new LexicAPIError(`Request timed out after ${this.timeout * 2}ms`, 408);
+      }
+      throw new LexicAPIError((err as Error).message || "Network error", 0);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+function normalizeReviewAnnotation(raw: Record<string, unknown>): ReviewAnnotation {
+  return {
+    id: typeof raw.id === "string" ? raw.id : "",
+    segmentIndex: typeof raw.segmentIndex === "number" ? raw.segmentIndex : 0,
+    startLine: typeof raw.startLine === "number" ? raw.startLine : 0,
+    endLine: typeof raw.endLine === "number" ? raw.endLine : 0,
+    originalText: typeof raw.originalText === "string" ? raw.originalText : "",
+    severity: isReviewSeverity(raw.severity) ? raw.severity : "info",
+    category: typeof raw.category === "string" ? raw.category : "",
+    issue: typeof raw.issue === "string" ? raw.issue : "",
+    suggestedFix: typeof raw.suggestedFix === "string" ? raw.suggestedFix : null,
+    citations: Array.isArray(raw.citations)
+      ? (raw.citations as Record<string, unknown>[]).map(normalizeCitation)
+      : [],
+    confidence: isConfidence(raw.confidence) ? raw.confidence : "low",
+  };
+}
+
+function normalizeReviewResult(raw: Record<string, unknown>): ReviewResult {
+  const rawSummary = (raw.summary || {}) as Record<string, unknown>;
+  return {
+    documentTitle: typeof raw.documentTitle === "string" ? raw.documentTitle : "",
+    totalSegments: typeof raw.totalSegments === "number" ? raw.totalSegments : 0,
+    annotations: Array.isArray(raw.annotations)
+      ? (raw.annotations as Record<string, unknown>[]).map(normalizeReviewAnnotation)
+      : [],
+    summary: {
+      errorCount: typeof rawSummary.errorCount === "number" ? rawSummary.errorCount : 0,
+      warningCount: typeof rawSummary.warningCount === "number" ? rawSummary.warningCount : 0,
+      infoCount: typeof rawSummary.infoCount === "number" ? rawSummary.infoCount : 0,
+      passCount: typeof rawSummary.passCount === "number" ? rawSummary.passCount : 0,
+      overallCompliance: isCompliance(rawSummary.overallCompliance) ? rawSummary.overallCompliance : "non-compliant",
+      topIssues: Array.isArray(rawSummary.topIssues) ? rawSummary.topIssues.filter((i): i is string => typeof i === "string") : [],
+    },
+    confidence: isConfidence(raw.confidence) ? raw.confidence : "low",
+    pluginVersion: typeof raw.pluginVersion === "string" ? raw.pluginVersion : "unknown",
+    latencyMs: typeof raw.latencyMs === "number" ? raw.latencyMs : 0,
+  };
+}
+
+function isReviewSeverity(v: unknown): v is "error" | "warning" | "info" | "pass" {
+  return v === "error" || v === "warning" || v === "info" || v === "pass";
+}
+
+function isCompliance(v: unknown): v is "compliant" | "partially-compliant" | "non-compliant" {
+  return v === "compliant" || v === "partially-compliant" || v === "non-compliant";
 }
 
 export class LexicAPIError extends Error {
