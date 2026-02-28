@@ -157,44 +157,6 @@ export async function streamQueryPipeline(
     throw new Error(`Plugin is not published: ${pluginSlug}`);
   }
 
-  const sources = await retrieveSources(query, plugin.id);
-  console.log(`[QueryPipeline:stream] Plugin: ${pluginSlug}, Query: "${query.slice(0, 80)}", Sources found: ${sources.length}`);
-
-  let decisionResult: DecisionResult | null = null;
-  const activeTrees = await db.query.decisionTrees.findMany({
-    where: and(eq(decisionTrees.pluginId, plugin.id), eq(decisionTrees.isActive, true)),
-  });
-  if (activeTrees.length > 0) {
-    decisionResult = executeDecisionTree(activeTrees[0].treeData, extractQueryParams(query));
-  }
-
-  const sourceContext = sources
-    .map((s, i) => `[Source ${i + 1}] (${s.documentName}${s.sectionTitle ? `, ${s.sectionTitle}` : ""})\n${s.content}`)
-    .join("\n\n---\n\n");
-
-  const decisionContext = decisionResult
-    ? `\nDecision Tree Analysis:\n${decisionResult.path.map((s) => `- ${s.label}: ${s.answer || s.result || (s.action?.recommendation ?? "")}`).join("\n")}`
-    : "";
-
-  const systemPrompt = `${plugin.systemPrompt}\n\n${SOURCE_PRIORITY_PROMPT}`;
-  const userMessage = `
-Source Documents:
-${sourceContext || "No relevant sources found."}
-${decisionContext}
-
-User Question: ${query}
-
-Answer the question. Prioritise the source documents above and cite them with [Source N]. You may supplement with your own knowledge or web search if needed.`;
-
-  const result = streamText({
-    model: openai("gpt-5"),
-    system: systemPrompt,
-    prompt: userMessage,
-    tools: {
-      web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
-    },
-  });
-
   function sse(data: Record<string, unknown>) {
     return encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
   }
@@ -203,10 +165,56 @@ Answer the question. Prioritise the source documents above and cite them with [S
     async start(controller) {
       let fullText = "";
       try {
-        controller.enqueue(sse({ type: "status", status: "searching_kb", message: `Found ${sources.length} source${sources.length !== 1 ? "s" : ""} in knowledge base`, sourceCount: sources.length }));
-        if (decisionResult) {
+        controller.enqueue(sse({ type: "status", status: "searching_kb", message: "Searching knowledge base..." }));
+
+        const sources = await retrieveSources(query, plugin.id);
+        console.log(`[QueryPipeline:stream] Plugin: ${pluginSlug}, Query: "${query.slice(0, 80)}", Sources found: ${sources.length}`);
+
+        controller.enqueue(sse({
+          type: "status",
+          status: "kb_results",
+          message: sources.length > 0
+            ? `Found ${sources.length} relevant source${sources.length !== 1 ? "s" : ""}`
+            : "No matching sources found — using AI knowledge + web",
+          sourceCount: sources.length,
+        }));
+
+        let decisionResult: DecisionResult | null = null;
+        const activeTrees = await db.query.decisionTrees.findMany({
+          where: and(eq(decisionTrees.pluginId, plugin.id), eq(decisionTrees.isActive, true)),
+        });
+        if (activeTrees.length > 0) {
+          decisionResult = executeDecisionTree(activeTrees[0].treeData, extractQueryParams(query));
           controller.enqueue(sse({ type: "status", status: "decision_tree", message: `Evaluated decision tree (${decisionResult.path.length} steps)` }));
         }
+
+        const sourceContext = sources
+          .map((s, i) => `[Source ${i + 1}] (${s.documentName}${s.sectionTitle ? `, ${s.sectionTitle}` : ""})\n${s.content}`)
+          .join("\n\n---\n\n");
+
+        const decisionContext = decisionResult
+          ? `\nDecision Tree Analysis:\n${decisionResult.path.map((s) => `- ${s.label}: ${s.answer || s.result || (s.action?.recommendation ?? "")}`).join("\n")}`
+          : "";
+
+        const systemPrompt = `${plugin.systemPrompt}\n\n${SOURCE_PRIORITY_PROMPT}`;
+        const userMessage = `
+Source Documents:
+${sourceContext || "No relevant sources found."}
+${decisionContext}
+
+User Question: ${query}
+
+Answer the question. Prioritise the source documents above and cite them with [Source N]. You may supplement with your own knowledge or web search if needed.`;
+
+        const result = streamText({
+          model: openai("gpt-5"),
+          system: systemPrompt,
+          prompt: userMessage,
+          tools: {
+            web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
+          },
+        });
+
         controller.enqueue(sse({ type: "status", status: "generating", message: "Generating response..." }));
 
         for await (const part of result.fullStream) {

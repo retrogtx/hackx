@@ -141,11 +141,6 @@ export default function SandboxPage() {
                   const idx = steps.findIndex((s) => s.status === "web_search" && !s.done);
                   if (idx >= 0) steps[idx] = { ...steps[idx], done: true };
                 }
-                if (event.status === "web_search_done") {
-                  msg.statusSteps = steps;
-                  updated[assistantIdx] = msg;
-                  return updated;
-                }
 
                 steps.push({ status: event.status, message: event.message });
                 msg.statusSteps = steps;
