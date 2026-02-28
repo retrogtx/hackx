@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import SilkBackground from "@/components/silk-background";
 import {
   FlaskConical,
   ArrowRight,
@@ -13,7 +14,10 @@ import {
 
 export default function LandingPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-[#0a0a0a]">
+    <div className="relative flex min-h-screen flex-col bg-[#0a0a0a]">
+      {/* Silk background */}
+      <SilkBackground />
+
       {/* Nav */}
       <header className="sticky top-0 z-50 border-b border-[#262626] bg-[#0a0a0a]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
@@ -36,8 +40,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="relative mx-auto max-w-6xl px-6 py-28 text-center md:py-40">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.03)_0%,transparent_70%)]" />
+      <section className="relative z-10 mx-auto max-w-6xl px-6 py-28 text-center md:py-40">
         <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-white md:text-6xl lg:text-7xl">
           Expert Brains for{" "}
           <span className="bg-gradient-to-r from-white to-[#666] bg-clip-text text-transparent">
@@ -87,7 +90,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section id="how-it-works" className="border-t border-[#262626] py-24">
+      <section id="how-it-works" className="relative z-10 border-t border-[#262626] py-24">
         <div className="mx-auto max-w-6xl px-6">
           <h2 className="mb-4 text-center text-3xl font-bold text-white">
             How Lexic Works
@@ -135,7 +138,7 @@ export default function LandingPage() {
       </section>
 
       {/* Key features grid */}
-      <section className="border-t border-[#262626] py-24">
+      <section className="relative z-10 border-t border-[#262626] py-24">
         <div className="mx-auto max-w-6xl px-6">
           <h2 className="mb-14 text-center text-3xl font-bold text-white">
             Why Lexic?
@@ -187,7 +190,7 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="border-t border-[#262626] py-24">
+      <section className="relative z-10 border-t border-[#262626] py-24">
         <div className="mx-auto max-w-2xl px-6 text-center">
           <h2 className="text-3xl font-bold text-white">Ready to build your expert plugin?</h2>
           <p className="mt-4 text-[#a1a1a1]">
@@ -204,7 +207,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[#262626] py-8">
+      <footer className="relative z-10 border-t border-[#262626] py-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6">
           <div className="flex items-center gap-2 text-sm text-[#666]">
             <FlaskConical className="h-4 w-4" />
