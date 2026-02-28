@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export default function NewPluginPage() {
@@ -147,7 +147,14 @@ export default function NewPluginPage() {
 
             <div className="flex gap-3">
               <Button type="submit" disabled={loading} className="bg-white text-black hover:bg-[#ccc] font-semibold">
-                {loading ? "Creating..." : "Create Plugin"}
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Plugin"
+                )}
               </Button>
               <Button type="button" variant="outline" className="border-[#333] text-[#a1a1a1] hover:bg-[#1a1a1a] hover:text-white" asChild>
                 <Link href="/plugins">Cancel</Link>
