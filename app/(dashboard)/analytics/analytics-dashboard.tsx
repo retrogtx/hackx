@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   AreaChart,
   Area,
@@ -69,28 +69,36 @@ export function AnalyticsDashboard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(
-        `/api/analytics?range=${range}&pluginId=${pluginId}`
-      );
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error || "Failed to load analytics");
-      }
-      setData(await res.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load analytics");
-    } finally {
-      setLoading(false);
-    }
+    fetch(`/api/analytics?range=${range}&pluginId=${pluginId}`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(err?.error || "Failed to load analytics");
+        }
+        return res.json();
+      })
+      .then((json) => {
+        if (!cancelled) setData(json);
+      })
+      .catch((err) => {
+        if (cancelled || (err instanceof DOMException && err.name === "AbortError")) return;
+        setError(err instanceof Error ? err.message : "Failed to load analytics");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [range, pluginId]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   const isEmpty = !loading && data && data.summary.totalQueries === 0;
 
@@ -213,8 +221,8 @@ export function AnalyticsDashboard({
                     tickLine={false}
                     axisLine={{ stroke: "#262626" }}
                     tickFormatter={(v: string) => {
-                      const d = new Date(v);
-                      return `${d.getMonth() + 1}/${d.getDate()}`;
+                      const [, m, d] = v.split("-");
+                      return `${Number(m)}/${Number(d)}`;
                     }}
                   />
                   <YAxis
@@ -232,8 +240,9 @@ export function AnalyticsDashboard({
                       fontSize: "13px",
                     }}
                     labelFormatter={(v) => {
-                      const d = new Date(String(v));
-                      return d.toLocaleDateString("en-US", {
+                      const [y, m, d] = String(v).split("-");
+                      const date = new Date(Number(y), Number(m) - 1, Number(d));
+                      return date.toLocaleDateString("en-US", {
                         month: "short",
                         day: "numeric",
                       });

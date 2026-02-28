@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
         SELECT
           COALESCE(c->>'document', 'Unknown') AS document,
           COUNT(*)::int AS citation_count,
-          AVG(NULLIF(c->>'similarity', '')::float) AS avg_similarity
+          AVG(CASE WHEN c->>'similarity' ~ '^[0-9]*\.?[0-9]+$' THEN (c->>'similarity')::float ELSE NULL END) AS avg_similarity
         FROM query_logs ql,
           LATERAL jsonb_array_elements(
             CASE WHEN jsonb_typeof(ql.citations) = 'array' AND jsonb_array_length(ql.citations) > 0
@@ -195,7 +195,7 @@ export async function GET(req: NextRequest) {
       topSources: (topSourcesResult as unknown as Array<{ document: string; citation_count: number; avg_similarity: number | null }>).map((r) => ({
         document: r.document,
         citationCount: r.citation_count,
-        avgSimilarity: r.avg_similarity ? Math.round(r.avg_similarity * 100) / 100 : null,
+        avgSimilarity: r.avg_similarity != null ? Math.round(r.avg_similarity * 100) / 100 : null,
       })),
       topDecisionPaths: (decisionPathsResult as unknown as Array<{ label: string; count: number }>).map((r) => ({
         label: r.label,
