@@ -4,8 +4,8 @@ import { db } from "@/lib/db";
 import { plugins } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Plus, Blocks } from "lucide-react";
+import { PluginsGrid } from "./plugins-grid";
 
 export default async function PluginsPage() {
   const user = await requireUser();
@@ -15,6 +15,16 @@ export default async function PluginsPage() {
     .from(plugins)
     .where(eq(plugins.creatorId, user.id))
     .orderBy(desc(plugins.createdAt));
+
+  const pluginCards = userPlugins.map((plugin) => ({
+    id: plugin.id,
+    name: plugin.name,
+    slug: plugin.slug,
+    description: plugin.description,
+    domain: plugin.domain,
+    isPublished: plugin.isPublished,
+    config: plugin.config ?? {},
+  }));
 
   return (
     <div>
@@ -48,34 +58,7 @@ export default async function PluginsPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {userPlugins.map((plugin) => (
-            <Link key={plugin.id} href={`/plugins/${plugin.id}`}>
-              <div className="group rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-bold text-white">{plugin.name}</h3>
-                  </div>
-                  <Badge
-                    variant={plugin.isPublished ? "default" : "secondary"}
-                    className={plugin.isPublished
-                      ? "bg-[#00d4aa]/10 text-[#00d4aa] border-[#00d4aa]/20"
-                      : "bg-[#1a1a1a] text-[#666] border-[#262626]"
-                    }
-                  >
-                    {plugin.isPublished ? "Published" : "Draft"}
-                  </Badge>
-                </div>
-                <p className="mt-3 line-clamp-2 text-sm text-[#a1a1a1]">
-                  {plugin.description || "No description"}
-                </p>
-                <div className="mt-3">
-                  <Badge variant="outline" className="border-[#333] text-[#888]">{plugin.domain}</Badge>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <PluginsGrid initialPlugins={pluginCards} />
       )}
     </div>
   );

@@ -4,6 +4,13 @@ import { db } from "@/lib/db";
 import { plugins } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
+function normalizeConfig(config: unknown): Record<string, unknown> {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return {};
+  }
+  return { ...(config as Record<string, unknown>) };
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -40,6 +47,15 @@ export async function PUT(
       return NextResponse.json({ error: "Plugin not found" }, { status: 404 });
     }
 
+    const baseConfig = normalizeConfig(existing.config);
+    const nextConfig =
+      typeof body.marketplaceShared === "boolean"
+        ? {
+            ...baseConfig,
+            marketplaceShared: body.marketplaceShared,
+          }
+        : baseConfig;
+
     const [updated] = await db
       .update(plugins)
       .set({
@@ -49,6 +65,7 @@ export async function PUT(
         systemPrompt: body.systemPrompt ?? existing.systemPrompt,
         citationMode: body.citationMode ?? existing.citationMode,
         isPublished: body.isPublished ?? existing.isPublished,
+        config: nextConfig,
         updatedAt: new Date(),
       })
       .where(eq(plugins.id, id))
