@@ -38,3 +38,9 @@ export interface LexicError {
   error: string;
   status?: number;
 }
+
+export type StreamEvent =
+  | { type: "status"; status: string; message: string; sourceCount?: number }
+  | { type: "delta"; text: string }
+  | { type: "done"; citations: Citation[]; decisionPath: DecisionStep[]; confidence: "high" | "medium" | "low"; pluginVersion: string }
+  | { type: "error"; error: string };

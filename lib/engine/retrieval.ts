@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { knowledgeChunks, knowledgeDocuments } from "@/lib/db/schema";
-import { sql, eq, and, gt } from "drizzle-orm";
+import { sql, eq, and, gt, cosineDistance } from "drizzle-orm";
 import { embedText } from "./embedding";
 
 export interface RetrievedChunk {
@@ -18,15 +18,18 @@ export async function retrieveSources(
   query: string,
   pluginId: string,
   topK: number = 8,
-  threshold: number = 0.4,
+  threshold: number = 0.3,
 ): Promise<RetrievedChunk[]> {
   const queryEmbedding = await embedText(query);
+
+  const distance = cosineDistance(knowledgeChunks.embedding, queryEmbedding);
+  const similarity = sql<number>`1 - (${distance})`;
 
   const results = await db
     .select({
       id: knowledgeChunks.id,
       content: knowledgeChunks.content,
-      similarity: sql<number>`1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector)`,
+      similarity,
       documentId: knowledgeChunks.documentId,
       documentName: knowledgeDocuments.fileName,
       pageNumber: knowledgeChunks.pageNumber,
@@ -38,13 +41,10 @@ export async function retrieveSources(
     .where(
       and(
         eq(knowledgeChunks.pluginId, pluginId),
-        gt(
-          sql`1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector)`,
-          threshold,
-        ),
+        gt(similarity, threshold),
       ),
     )
-    .orderBy(sql`${knowledgeChunks.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector`)
+    .orderBy(distance)
     .limit(topK);
 
   return results;

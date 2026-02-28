@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Roboto_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const robotoMono = Roboto_Mono({
@@ -39,6 +40,7 @@ export default function RootLayout({
       <html lang="en" className="dark">
         <body className={`${robotoMono.variable} font-sans antialiased`}>
           {children}
+          <Toaster />
         </body>
       </html>
     </ClerkProvider>

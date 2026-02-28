@@ -135,8 +135,117 @@ export function PluginSettings({
     }
   }
 
+  const [snippetMode, setSnippetMode] = useState<"json" | "stream">("stream");
+  const [snippetLang, setSnippetLang] = useState<"curl" | "typescript" | "python">("curl");
+
   function getApiSnippet() {
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+
+    if (snippetLang === "typescript") {
+      if (snippetMode === "stream") {
+        return `import { Lexic } from "lexic-sdk";
+
+const lexic = new Lexic({
+  apiKey: "${bearerToken}",
+  baseUrl: "${baseUrl}",
+});
+
+for await (const event of lexic.queryStream({
+  plugin: "${slug}",
+  query: "Your question here",
+})) {
+  switch (event.type) {
+    case "status":
+      console.log(\`[\${event.status}] \${event.message}\`);
+      break;
+    case "delta":
+      process.stdout.write(event.text);
+      break;
+    case "done":
+      console.log("\\nCitations:", event.citations);
+      console.log("Confidence:", event.confidence);
+      break;
+  }
+}`;
+      }
+      return `import { Lexic } from "lexic-sdk";
+
+const lexic = new Lexic({
+  apiKey: "${bearerToken}",
+  baseUrl: "${baseUrl}",
+});
+
+const result = await lexic.query({
+  plugin: "${slug}",
+  query: "Your question here",
+});
+
+console.log(result.answer);
+console.log(result.citations);
+console.log(result.confidence);`;
+    }
+
+    if (snippetLang === "python") {
+      if (snippetMode === "stream") {
+        return `import requests
+
+resp = requests.post(
+    "${baseUrl}/api/v1/query",
+    headers={
+        "Authorization": "Bearer ${bearerToken}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    },
+    json={
+        "plugin": "${slug}",
+        "query": "Your question here",
+        "stream": True,
+    },
+    stream=True,
+)
+
+for line in resp.iter_lines():
+    if line and line.startswith(b"data: "):
+        import json
+        event = json.loads(line[6:])
+        if event["type"] == "status":
+            print(f"[{event['status']}] {event['message']}")
+        elif event["type"] == "delta":
+            print(event["text"], end="", flush=True)
+        elif event["type"] == "done":
+            print(f"\\nCitations: {event['citations']}")`;
+      }
+      return `import requests
+
+resp = requests.post(
+    "${baseUrl}/api/v1/query",
+    headers={
+        "Authorization": "Bearer ${bearerToken}",
+        "Content-Type": "application/json",
+    },
+    json={
+        "plugin": "${slug}",
+        "query": "Your question here",
+    },
+)
+
+data = resp.json()
+print(data["answer"])
+print(data["citations"])
+print(data["confidence"])`;
+    }
+
+    if (snippetMode === "stream") {
+      return `curl -N -X POST ${baseUrl}/api/v1/query \\
+  -H "Authorization: Bearer ${bearerToken}" \\
+  -H "Content-Type: application/json" \\
+  -H "Accept: text/event-stream" \\
+  -d '{
+    "plugin": "${slug}",
+    "query": "Your question here",
+    "stream": true
+  }'`;
+    }
     return `curl -X POST ${baseUrl}/api/v1/query \\
   -H "Authorization: Bearer ${bearerToken}" \\
   -H "Content-Type: application/json" \\
@@ -326,10 +435,45 @@ export function PluginSettings({
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 rounded-md border border-[#262626] bg-[#111111] p-0.5">
+              {(["curl", "typescript", "python"] as const).map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => setSnippetLang(lang)}
+                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${snippetLang === lang ? "bg-[#262626] text-white" : "text-[#666] hover:text-[#a1a1a1]"}`}
+                >
+                  {lang === "curl" ? "cURL" : lang === "typescript" ? "TypeScript" : "Python"}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 rounded-md border border-[#262626] bg-[#111111] p-0.5">
+              <button
+                type="button"
+                onClick={() => setSnippetMode("stream")}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${snippetMode === "stream" ? "bg-[#00d4aa]/20 text-[#00d4aa]" : "text-[#666] hover:text-[#a1a1a1]"}`}
+              >
+                Streaming
+              </button>
+              <button
+                type="button"
+                onClick={() => setSnippetMode("json")}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${snippetMode === "json" ? "bg-[#262626] text-white" : "text-[#666] hover:text-[#a1a1a1]"}`}
+              >
+                JSON
+              </button>
+            </div>
+          </div>
           <pre className="overflow-x-auto rounded-md border border-[#262626] bg-[#111111] p-4 text-sm text-[#ededed]">
             {getApiSnippet()}
           </pre>
+          {snippetMode === "stream" && (
+            <p className="text-xs text-[#555]">
+              Streaming returns real-time status updates ({'"searching_kb"'}, {'"web_search"'}, {'"generating"'}), text tokens, and final citations.
+            </p>
+          )}
         </div>
       </div>
     </div>
