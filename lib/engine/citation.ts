@@ -47,6 +47,6 @@ function computeConfidence(
 ): "high" | "medium" | "low" {
   if (citationCount >= 3) return "high";
   if (citationCount >= 1) return "medium";
-  if (sourceCount === 0) return "low";
+  if (sourceCount > 0) return "medium";
   return "low";
 }

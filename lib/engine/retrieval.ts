@@ -18,7 +18,7 @@ export async function retrieveSources(
   query: string,
   pluginId: string,
   topK: number = 8,
-  threshold: number = 0.75,
+  threshold: number = 0.4,
 ): Promise<RetrievedChunk[]> {
   const queryEmbedding = await embedText(query);
 

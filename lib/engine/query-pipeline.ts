@@ -59,6 +59,7 @@ export async function runQueryPipeline(
 
   // 2. Retrieve sources
   const sources = await retrieveSources(query, plugin.id);
+  console.log(`[QueryPipeline] Plugin: ${pluginSlug}, Query: "${query.slice(0, 80)}", Sources found: ${sources.length}${sources.length > 0 ? `, top similarity: ${sources[0].similarity.toFixed(3)}` : ""}`);
 
   // 3. Decision tree evaluation
   let decisionResult: DecisionResult | null = null;
