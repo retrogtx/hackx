@@ -57,15 +57,30 @@ export default function ApiKeysPage() {
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/api-keys?id=${id}`, { method: "DELETE" });
-    await loadKeys();
+    if (!window.confirm("Delete this API key? Any agents using it will immediately lose access. This cannot be undone.")) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/api-keys?id=${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to delete API key");
+      }
+      await loadKeys();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete API key");
+    }
   }
 
-  function copyKey() {
+  async function copyKey() {
     if (newKey) {
-      navigator.clipboard.writeText(newKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(newKey);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        alert("Failed to copy — please select and copy the key manually");
+      }
     }
   }
 

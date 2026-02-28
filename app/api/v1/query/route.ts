@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { apiKeys } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { apiKeys, plugins } from "@/lib/db/schema";
+import { eq, and, or } from "drizzle-orm";
 import { hashApiKey } from "@/lib/utils/api-key";
 import { runQueryPipeline } from "@/lib/engine/query-pipeline";
+
+const MAX_QUERY_LENGTH = 4000;
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,22 +34,54 @@ export async function POST(req: NextRequest) {
 
     // 2. Parse body
     const body = await req.json();
-    const { plugin, query } = body;
+    const { plugin: pluginSlug, query } = body;
 
-    if (!plugin || !query) {
+    if (!pluginSlug || !query) {
       return NextResponse.json(
         { error: "Missing required fields: plugin, query" },
         { status: 400 },
       );
     }
 
-    // 3. Run pipeline
-    const result = await runQueryPipeline(plugin, query, apiKey.id);
+    if (typeof query !== "string" || query.length > MAX_QUERY_LENGTH) {
+      return NextResponse.json(
+        { error: `Query must be a string under ${MAX_QUERY_LENGTH} characters` },
+        { status: 400 },
+      );
+    }
+
+    // 3. Verify the API key owner has access to this plugin
+    //    Allowed if: plugin is published OR the key owner is the plugin creator
+    const plugin = await db.query.plugins.findFirst({
+      where: and(
+        eq(plugins.slug, pluginSlug),
+        or(
+          eq(plugins.isPublished, true),
+          eq(plugins.creatorId, apiKey.userId),
+        ),
+      ),
+    });
+
+    if (!plugin) {
+      return NextResponse.json(
+        { error: "Plugin not found or access denied" },
+        { status: 404 },
+      );
+    }
+
+    // 4. Run pipeline — we already verified access above, so skip the publish check
+    const result = await runQueryPipeline(pluginSlug, query, apiKey.id, { skipPublishCheck: true });
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal server error";
-    const status = message.includes("not found") ? 404 : 500;
-    return NextResponse.json({ error: message }, { status });
+    if (error instanceof Error) {
+      if (error.message.includes("not found")) {
+        return NextResponse.json({ error: error.message }, { status: 404 });
+      }
+      if (error.message.includes("not published")) {
+        return NextResponse.json({ error: error.message }, { status: 403 });
+      }
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

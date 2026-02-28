@@ -92,6 +92,26 @@ TypeScript package (`@sme-plug/sdk`) with framework adapters:
 - **Citations are mandatory by default** — every plugin response must link claims to source chunks.
 - **Plugins are stateless per-request** — hot-swapping is just changing which plugin slug is sent in the next API call.
 
+## Git Workflow (MANDATORY)
+
+**No one pushes directly to `main`. No exceptions.**
+
+1. **Always create a feature branch** from `main` before making changes:
+   ```bash
+   git checkout main && git pull origin main
+   git checkout -b <type>/<short-description>   # e.g. fix/api-key-ownership, feat/rate-limiting
+   ```
+2. **Commit to your feature branch**, push it, then open a PR against `main`.
+3. **Every PR requires at least 1 review approval** before merging.
+4. **Never force-push to `main`** or merge without a reviewed PR.
+5. **Branch naming**: `feat/`, `fix/`, `chore/`, `docs/` prefixes.
+6. **Delete branches after merge.**
+
+If Claude Code or any agent is making changes, it MUST:
+- Work on a feature branch, never on `main`
+- Create a PR when done, never merge its own PR
+- Wait for a human review before the PR is merged
+
 ## Environment Variables
 
 Required in `.env`:

@@ -85,10 +85,22 @@ export default function KnowledgeBasePage() {
   }
 
   async function handleDelete(docId: string) {
-    await fetch(`/api/plugins/${pluginId}/documents?docId=${docId}`, {
-      method: "DELETE",
-    });
-    await loadDocs();
+    if (!window.confirm("Delete this document? This will remove all its chunks and embeddings. This cannot be undone.")) {
+      return;
+    }
+    setError("");
+    try {
+      const res = await fetch(`/api/plugins/${pluginId}/documents?docId=${docId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to delete document");
+      }
+      await loadDocs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete document");
+    }
   }
 
   return (
