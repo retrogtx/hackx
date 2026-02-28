@@ -20,20 +20,21 @@ export function processCitations(
   let phantomCount = 0;
   let totalRefs = 0;
 
-  // Collect all [Source N] references and whether they're valid
-  const allRefs: Array<{ fullMatch: string; index: number; valid: boolean }> = [];
+  // Collect phantom refs (invalid [Source N] pointing to non-existent sources)
+  const phantomRefs: string[] = [];
+  const seenIds = new Set<string>();
   const sourceRefs = answer.matchAll(/\[Source\s+(\d+)\]/gi);
 
   for (const match of sourceRefs) {
     totalRefs++;
     const sourceIdx = parseInt(match[1]) - 1; // 1-based to 0-based
-    const valid = sourceIdx >= 0 && sourceIdx < sources.length;
 
-    if (valid) {
+    if (sourceIdx >= 0 && sourceIdx < sources.length) {
       const source = sources[sourceIdx];
       const citationId = `src_${sourceIdx + 1}`;
 
-      if (!citations.find((c) => c.id === citationId)) {
+      if (!seenIds.has(citationId)) {
+        seenIds.add(citationId);
         citations.push({
           id: citationId,
           document: source.documentName,
@@ -47,16 +48,15 @@ export function processCitations(
     } else {
       // This [Source N] points to nothing — it's a phantom
       phantomCount++;
-      allRefs.push({ fullMatch: match[0], index: match.index!, valid: false });
+      phantomRefs.push(match[0]);
     }
   }
 
-  // Strip phantom citations from the answer text so users don't see
-  // broken references like [Source 15] when only 3 sources exist
-  for (const ref of allRefs) {
-    if (!ref.valid) {
-      cleanedAnswer = cleanedAnswer.replace(ref.fullMatch, "");
-    }
+  // Strip ALL occurrences of each phantom citation from the answer text
+  // so users don't see broken references like [Source 15] when only 3 sources exist.
+  // Uses replaceAll to catch duplicates (AI may cite the same phantom twice).
+  for (const ref of phantomRefs) {
+    cleanedAnswer = cleanedAnswer.replaceAll(ref, "");
   }
 
   // Clean up double spaces left behind after stripping
@@ -76,24 +76,17 @@ function computeConfidence(
   realCitationCount: number,
   sourceCount: number,
   phantomCount: number,
-  totalRefs: number,
+  _totalRefs: number,
 ): "high" | "medium" | "low" {
-  // No sources found in the database at all — nothing to cite
-  if (sourceCount === 0) return "low";
+  // --- LOW: something is clearly wrong ---
+  if (sourceCount === 0) return "low";            // no sources in DB at all
+  if (realCitationCount === 0) return "low";       // AI cited nothing real
+  if (phantomCount > realCitationCount) return "low"; // more fakes than real
 
-  // Zero real citations — AI didn't reference any real source
-  if (realCitationCount === 0) return "low";
-
-  // More phantoms than real citations — AI is making up references
-  if (phantomCount > realCitationCount) return "low";
-
-  // Good coverage: 3+ real citations AND no phantom majority
-  if (realCitationCount >= 3 && phantomCount === 0) return "high";
-
-  // Decent coverage: 3+ real but some phantoms, or 2 real with none
-  if (realCitationCount >= 3) return "medium";
+  // --- HIGH: strong evidence, no fakes ---
   if (realCitationCount >= 2 && phantomCount === 0) return "high";
 
-  // 1-2 real citations
+  // --- MEDIUM: everything else ---
+  // Has real citations but also some phantoms, or only 1 citation
   return "medium";
 }
