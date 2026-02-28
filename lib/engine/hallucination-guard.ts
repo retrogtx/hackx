@@ -31,8 +31,6 @@ const REFUSAL_PATTERNS = [
  * professional" is NOT a refusal — it's a good answer with standard advice.
  */
 function detectSelfRefusal(answer: string): boolean {
-  // Long answers with citations are legitimate even if they contain
-  // refusal-like phrases as disclaimers
   if (answer.length > 300) return false;
 
   const lower = answer.toLowerCase();
@@ -40,7 +38,7 @@ function detectSelfRefusal(answer: string): boolean {
 }
 
 export function applyHallucinationGuard(result: CitationResult): CitationResult {
-  const { cleanedAnswer, citations, phantomCount, totalRefs } = result;
+  const { cleanedAnswer, citations, phantomCount, realRefCount } = result;
 
   // CHECK 1: Zero real citations — AI cited nothing real
   if (citations.length === 0) {
@@ -49,7 +47,7 @@ export function applyHallucinationGuard(result: CitationResult): CitationResult 
       citations: [],
       confidence: "low",
       phantomCount,
-      totalRefs,
+      realRefCount,
     };
   }
 
@@ -62,32 +60,26 @@ export function applyHallucinationGuard(result: CitationResult): CitationResult 
       citations: [],
       confidence: "low",
       phantomCount,
-      totalRefs,
+      realRefCount,
     };
   }
 
-  // CHECK 3: Phantom majority — more fake citations than real ones.
-  // Already caught by computeConfidence returning "low", but this
-  // check replaces the answer with the refusal message for clarity.
-  if (phantomCount > 0 && phantomCount > citations.length) {
+  // CHECK 3: Phantom majority — more fake ref occurrences than real ones.
+  // Uses realRefCount (per-occurrence) not citations.length (unique sources)
+  // so repeated valid citations like "[Source 1] [Source 1] [Source 7]"
+  // (2 real refs) aren't unfairly penalized against 1 phantom.
+  if (phantomCount > 0 && phantomCount > realRefCount) {
     return {
       cleanedAnswer: REFUSAL_MESSAGE,
       citations: [],
       confidence: "low",
       phantomCount,
-      totalRefs,
+      realRefCount,
     };
   }
 
-  // CHECK 4: Some phantoms but answer is mostly real — downgrade to medium.
-  // Don't refuse, but signal that something was off.
-  if (phantomCount > 0 && result.confidence === "high") {
-    return {
-      ...result,
-      confidence: "medium",
-    };
-  }
-
-  // All checks passed — return as-is
+  // All checks passed — return as-is.
+  // Confidence was already computed by processCitations using the same
+  // realRefCount vs phantomCount logic, so no need to downgrade here.
   return result;
 }

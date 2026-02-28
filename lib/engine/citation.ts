@@ -7,8 +7,8 @@ export interface CitationResult {
   confidence: "high" | "medium" | "low";
   /** Number of [Source N] refs that pointed to non-existent sources */
   phantomCount: number;
-  /** Total [Source N] refs found in the raw answer (valid + phantom) */
-  totalRefs: number;
+  /** Number of [Source N] refs that pointed to real sources (per-occurrence) */
+  realRefCount: number;
 }
 
 export function processCitations(
@@ -18,7 +18,7 @@ export function processCitations(
   const citations: CitationEntry[] = [];
   let cleanedAnswer = answer;
   let phantomCount = 0;
-  let totalRefs = 0;
+  let realRefCount = 0;
 
   // Collect phantom refs (invalid [Source N] pointing to non-existent sources)
   const phantomRefs: string[] = [];
@@ -26,10 +26,10 @@ export function processCitations(
   const sourceRefs = answer.matchAll(/\[Source\s+(\d+)\]/gi);
 
   for (const match of sourceRefs) {
-    totalRefs++;
     const sourceIdx = parseInt(match[1]) - 1; // 1-based to 0-based
 
     if (sourceIdx >= 0 && sourceIdx < sources.length) {
+      realRefCount++;
       const source = sources[sourceIdx];
       const citationId = `src_${sourceIdx + 1}`;
 
@@ -62,31 +62,26 @@ export function processCitations(
   // Clean up double spaces left behind after stripping
   cleanedAnswer = cleanedAnswer.replace(/  +/g, " ").trim();
 
-  const confidence = computeConfidence(
-    citations.length,
-    sources.length,
-    phantomCount,
-    totalRefs,
-  );
+  const confidence = computeConfidence(realRefCount, sources.length, phantomCount);
 
-  return { cleanedAnswer, citations, confidence, phantomCount, totalRefs };
+  return { cleanedAnswer, citations, confidence, phantomCount, realRefCount };
 }
 
 function computeConfidence(
-  realCitationCount: number,
+  realRefCount: number,
   sourceCount: number,
   phantomCount: number,
-  _totalRefs: number,
 ): "high" | "medium" | "low" {
   // --- LOW: something is clearly wrong ---
-  if (sourceCount === 0) return "low";            // no sources in DB at all
-  if (realCitationCount === 0) return "low";       // AI cited nothing real
-  if (phantomCount > realCitationCount) return "low"; // more fakes than real
+  if (sourceCount === 0) return "low";         // no sources in DB at all
+  if (realRefCount === 0) return "low";         // AI cited nothing real
+  if (phantomCount > realRefCount) return "low"; // more fake refs than real refs
 
   // --- HIGH: strong evidence, no fakes ---
-  if (realCitationCount >= 2 && phantomCount === 0) return "high";
+  // 2+ real references (occurrences, not unique) and zero phantoms
+  if (realRefCount >= 2 && phantomCount === 0) return "high";
 
   // --- MEDIUM: everything else ---
-  // Has real citations but also some phantoms, or only 1 citation
+  // Has real refs but also some phantoms, or only 1 real ref
   return "medium";
 }
