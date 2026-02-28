@@ -48,8 +48,8 @@ export default async function MarketplacePage({
   );
   const resolvedSearchParams = await searchParams;
   const rawQuery = Array.isArray(resolvedSearchParams.q)
-    ? resolvedSearchParams.q[0] ?? ""
-    : resolvedSearchParams.q ?? "";
+    ? (resolvedSearchParams.q[0] ?? "")
+    : (resolvedSearchParams.q ?? "");
   const query = rawQuery.trim().toLowerCase();
   const filteredListings = query
     ? listings.filter((plugin) =>
@@ -76,7 +76,8 @@ export default async function MarketplacePage({
           </div>
           <h1 className="text-3xl font-bold text-white">Marketplace</h1>
           <p className="mt-2 text-[#a1a1a1]">
-            Plugins that creators explicitly shared from their private dashboard.
+            Plugins that creators explicitly shared from their private
+            dashboard.
           </p>
         </div>
 
@@ -91,7 +92,10 @@ export default async function MarketplacePage({
               className="border-[#262626] bg-[#111111] pl-9 text-white placeholder:text-[#666] focus:border-[#444] focus:ring-0"
             />
           </div>
-          <Button type="submit" className="bg-white text-black hover:bg-[#ccc] font-semibold">
+          <Button
+            type="submit"
+            className="bg-white text-black hover:bg-[#ccc] font-semibold"
+          >
             Search
           </Button>
           {query ? (
@@ -109,7 +113,9 @@ export default async function MarketplacePage({
         {listings.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-[#333] py-24">
             <Blocks className="mb-4 h-12 w-12 text-[#444]" />
-            <h2 className="mb-2 text-lg font-semibold text-white">No listings yet</h2>
+            <h2 className="mb-2 text-lg font-semibold text-white">
+              No listings yet
+            </h2>
             <p className="text-center text-sm text-[#a1a1a1]">
               Share a plugin to marketplace from the plugin actions menu.
             </p>
@@ -117,7 +123,9 @@ export default async function MarketplacePage({
         ) : filteredListings.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-[#333] py-24">
             <Search className="mb-4 h-10 w-10 text-[#555]" />
-            <h2 className="mb-2 text-lg font-semibold text-white">No matching plugins</h2>
+            <h2 className="mb-2 text-lg font-semibold text-white">
+              No matching plugins
+            </h2>
             <p className="text-center text-sm text-[#a1a1a1]">
               Try a different search query.
             </p>
@@ -128,11 +136,14 @@ export default async function MarketplacePage({
               <Link
                 key={plugin.id}
                 href={`/marketplace/${plugin.slug}`}
-                className="group rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]"
+                className="group flex flex-col rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]"
               >
-                <div className="mb-3 flex items-center gap-2">
-                  <Badge variant="outline" className="border-[#333] text-[#a1a1a1] max-w-[70%] truncate shrink">
-                    {plugin.domain}
+                <div className="mb-3 flex min-w-0 items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className="border-[#333] text-[#a1a1a1] max-w-[60%] shrink min-w-0"
+                  >
+                    <span className="truncate">{plugin.domain}</span>
                   </Badge>
                   {plugin.isPublished ? (
                     <Badge className="bg-[#00d4aa]/10 text-[#00d4aa] border-[#00d4aa]/20 shrink-0">
@@ -144,12 +155,14 @@ export default async function MarketplacePage({
                     </Badge>
                   )}
                 </div>
-                <h2 className="font-bold text-white">{plugin.name}</h2>
-                <p className="mt-2 line-clamp-3 text-sm text-[#a1a1a1]">
+                <h2 className="truncate font-bold text-white">{plugin.name}</h2>
+                <p className="mt-2 line-clamp-3 text-sm text-[#a1a1a1] flex-1">
                   {plugin.description || "No description"}
                 </p>
-                <div className="mt-4 flex items-center justify-between text-xs text-[#666]">
-                  <span>by {plugin.creatorName ?? "Unknown creator"}</span>
+                <div className="mt-4 flex items-center justify-between gap-2 text-xs text-[#666]">
+                  <span className="min-w-0 truncate">
+                    by {plugin.creatorName ?? "Unknown creator"}
+                  </span>
                   <span className="inline-flex items-center gap-1 text-[#888]">
                     Open <ExternalLink className="h-3 w-3" />
                   </span>
