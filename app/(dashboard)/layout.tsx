@@ -2,6 +2,7 @@ import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { Blocks, Key, FlaskConical, Store, Users } from "lucide-react";
+import { DashboardOnboardingTour } from "@/components/dashboard-onboarding-tour";
 
 const navItems = [
   { href: "/plugins", label: "Plugins", icon: Blocks },
@@ -26,7 +27,11 @@ export default async function DashboardLayout({
       {/* Sidebar */}
       <aside className="sticky top-0 flex h-screen w-60 flex-col border-r border-[#262626] bg-[#0a0a0a]">
         <div className="flex h-14 items-center border-b border-[#262626] px-5">
-          <Link href="/plugins" className="flex items-center gap-2 font-bold text-white tracking-tight">
+          <Link
+            href="/plugins"
+            data-tour="logo"
+            className="flex items-center gap-2 font-bold text-white tracking-tight"
+          >
             <FlaskConical className="h-4 w-4" />
             <span>Lexic</span>
           </Link>
@@ -37,6 +42,17 @@ export default async function DashboardLayout({
             <Link
               key={item.href}
               href={item.href}
+              data-tour={
+                item.href === "/plugins"
+                  ? "nav-plugins"
+                  : item.href === "/collaboration"
+                    ? "nav-collaboration"
+                  : item.href === "/marketplace"
+                    ? "nav-marketplace"
+                    : item.href === "/api-keys"
+                      ? "nav-api-keys"
+                      : undefined
+              }
               className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-[#a1a1a1] transition-colors hover:bg-[#1a1a1a] hover:text-white"
             >
               <item.icon className="h-4 w-4" />
@@ -47,7 +63,7 @@ export default async function DashboardLayout({
 
         <div className="border-t border-[#262626] p-4">
           {user ? (
-            <div className="flex items-center gap-3">
+            <div data-tour="account" className="flex items-center gap-3">
               <UserButton
                 afterSignOutUrl="/"
                 appearance={{
@@ -55,7 +71,9 @@ export default async function DashboardLayout({
                 }}
               />
               {displayName && (
-                <span className="truncate text-sm text-[#a1a1a1]">{displayName}</span>
+                <span className="truncate text-sm text-[#a1a1a1]">
+                  {displayName}
+                </span>
               )}
             </div>
           ) : (
@@ -70,8 +88,11 @@ export default async function DashboardLayout({
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-5xl p-6 md:p-10">{children}</div>
+      <main data-tour="main-workspace" className="flex-1 overflow-auto">
+        <div className="mx-auto max-w-5xl p-6 md:p-10">
+          {children}
+          <DashboardOnboardingTour enabled={Boolean(user)} />
+        </div>
       </main>
     </div>
   );
