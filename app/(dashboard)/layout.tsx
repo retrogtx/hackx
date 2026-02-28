@@ -1,10 +1,11 @@
 import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { Blocks, Key, FlaskConical } from "lucide-react";
+import { Blocks, Key, FlaskConical, Store } from "lucide-react";
 
 const navItems = [
   { href: "/plugins", label: "Plugins", icon: Blocks },
+  { href: "/marketplace", label: "Marketplace", icon: Store },
   { href: "/api-keys", label: "API Keys", icon: Key },
 ];
 
@@ -44,17 +45,26 @@ export default async function DashboardLayout({
         </nav>
 
         <div className="border-t border-[#262626] p-4">
-          <div className="flex items-center gap-3">
-            <UserButton
-              afterSignOutUrl="/"
-              appearance={{
-                elements: { avatarBox: "h-7 w-7" },
-              }}
-            />
-            {displayName && (
-              <span className="truncate text-sm text-[#a1a1a1]">{displayName}</span>
-            )}
-          </div>
+          {user ? (
+            <div className="flex items-center gap-3">
+              <UserButton
+                afterSignOutUrl="/"
+                appearance={{
+                  elements: { avatarBox: "h-7 w-7" },
+                }}
+              />
+              {displayName && (
+                <span className="truncate text-sm text-[#a1a1a1]">{displayName}</span>
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/sign-in?redirect_url=/marketplace"
+              className="inline-flex items-center rounded-md border border-[#333] px-3 py-1.5 text-sm text-[#a1a1a1] transition-colors hover:bg-[#1a1a1a] hover:text-white"
+            >
+              Sign in
+            </Link>
+          )}
         </div>
       </aside>
 

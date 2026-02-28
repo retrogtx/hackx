@@ -6,7 +6,13 @@ import { plugins, knowledgeDocuments, decisionTrees, queryLogs } from "@/lib/db/
 import { eq, and, count } from "drizzle-orm";
 import { ArrowLeft, Upload, GitBranch, MessageSquare, Globe } from "lucide-react";
 import { PublishButton } from "./publish-button";
+import { ShareQrButton } from "./share-qr-button";
 import { PluginSettings } from "./plugin-settings";
+
+function isMarketplaceShared(config: Record<string, unknown> | null): boolean {
+  if (!config) return false;
+  return config.marketplaceShared === true;
+}
 
 export default async function PluginDetailPage({
   params,
@@ -37,6 +43,8 @@ export default async function PluginDetailPage({
     .from(queryLogs)
     .where(eq(queryLogs.pluginId, id));
 
+  const marketplaceShared = isMarketplaceShared(plugin.config ?? null);
+
   return (
     <div>
       <Link
@@ -52,6 +60,7 @@ export default async function PluginDetailPage({
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-white">{plugin.name}</h1>
             <PublishButton pluginId={plugin.id} isPublished={plugin.isPublished} />
+            <ShareQrButton slug={plugin.slug} isMarketplaceShared={marketplaceShared} />
           </div>
           {plugin.description && (
             <p className="mt-2 text-[#a1a1a1]">{plugin.description}</p>
