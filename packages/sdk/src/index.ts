@@ -6,9 +6,16 @@ import type {
   StreamEvent,
   Citation,
   DecisionStep,
+  CollaborateOptions,
+  CollaborationResult,
+  CollaborationStreamEvent,
 } from "./types";
 
-export type { LexicConfig, QueryOptions, QueryRequestOptions, QueryResult, Citation, DecisionStep, LexicError, StreamEvent } from "./types";
+export type {
+  LexicConfig, QueryOptions, QueryRequestOptions, QueryResult, Citation, DecisionStep, LexicError, StreamEvent,
+  CollaborateOptions, CollaborationResult, CollaborationStreamEvent, CollaborationMode,
+  ExpertResponse, CollaborationRound, ConsensusResult, ConflictEntry,
+} from "./types";
 
 const DEFAULT_BASE_URL = "https://dawk-ps2.vercel.app";
 const DEFAULT_TIMEOUT = 120_000;
@@ -268,6 +275,128 @@ export class Lexic {
       confidence: "low",
       pluginVersion: "unknown",
     };
+  }
+
+  /**
+   * Run a multi-expert collaboration session. Multiple SME plugins
+   * debate/review the query and produce a synthesized consensus.
+   */
+  async collaborate(options: CollaborateOptions): Promise<CollaborationResult> {
+    if (!options.experts?.length || options.experts.length < 2) {
+      throw new Error("Lexic: collaborate requires at least 2 expert plugin slugs");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout * 2);
+
+    try {
+      const body: Record<string, unknown> = {
+        experts: options.experts,
+        query: options.query,
+        mode: options.mode || "debate",
+        maxRounds: options.maxRounds || 3,
+      };
+
+      const res = await fetch(`${this.baseUrl}/api/v1/collaborate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as LexicError;
+        throw new LexicAPIError(errBody.error || `HTTP ${res.status}`, res.status);
+      }
+
+      return (await res.json()) as CollaborationResult;
+    } catch (err) {
+      if (err instanceof LexicAPIError) throw err;
+      if ((err as Error).name === "AbortError") {
+        throw new LexicAPIError(`Request timed out after ${this.timeout * 2}ms`, 408);
+      }
+      throw new LexicAPIError((err as Error).message || "Network error", 0);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Stream a collaboration session. Yields events as experts respond:
+   *   - experts_resolved → which experts joined
+   *   - round_start      → deliberation round beginning
+   *   - expert_thinking   → an expert is generating
+   *   - expert_response   → an expert's full response
+   *   - round_complete    → round finished
+   *   - done              → final consensus + all rounds
+   *   - error             → something went wrong
+   */
+  async *collaborateStream(options: CollaborateOptions): AsyncGenerator<CollaborationStreamEvent> {
+    if (!options.experts?.length || options.experts.length < 2) {
+      throw new Error("Lexic: collaborate requires at least 2 expert plugin slugs");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout * 2);
+
+    try {
+      const body: Record<string, unknown> = {
+        experts: options.experts,
+        query: options.query,
+        mode: options.mode || "debate",
+        maxRounds: options.maxRounds || 3,
+        stream: true,
+      };
+
+      const res = await fetch(`${this.baseUrl}/api/v1/collaborate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as LexicError;
+        throw new LexicAPIError(errBody.error || `HTTP ${res.status}`, res.status);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new LexicAPIError("No response stream", 0);
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            yield JSON.parse(line.slice(6)) as CollaborationStreamEvent;
+          } catch { /* skip */ }
+        }
+      }
+    } catch (err) {
+      if (err instanceof LexicAPIError) throw err;
+      if ((err as Error).name === "AbortError") {
+        throw new LexicAPIError(`Request timed out after ${this.timeout * 2}ms`, 408);
+      }
+      throw new LexicAPIError((err as Error).message || "Network error", 0);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }
 

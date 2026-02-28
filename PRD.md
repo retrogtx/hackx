@@ -86,6 +86,21 @@ Lexic is a **web platform + API**. It is NOT a CLI tool, not a library you impor
 - **Audit Log**: Full trace of which decision tree nodes fired, which sources were retrieved, what reasoning path was taken
 - **Hallucination Guard**: If no source supports a claim, the system says "I don't have verified information on this" instead of guessing
 
+### 3.5 Expert Collaboration Rooms (Multi-Expert Adversarial Reasoning)
+
+A single expert can miss what it doesn't know. Collaboration Rooms bring multiple SME plugins into the same session to **debate, challenge each other, and synthesize** a consensus — catching cross-domain blind spots no single expert would find.
+
+- **Room Creation**: Pick 2–5 expert plugins, name the room (e.g., "Building Safety Review Panel"), choose a deliberation mode
+- **Three Deliberation Modes**:
+  - **Debate** — experts challenge each other across multiple rounds, then converge on consensus
+  - **Consensus** — all experts answer independently in one round, system synthesizes
+  - **Review** — one expert answers first, others critique and refine
+- **Live Streaming Deliberation**: Watch experts respond in real-time with color-coded lanes, revision markers, and citations from each expert's knowledge base
+- **Consensus Synthesis**: After deliberation, an AI moderator synthesizes the final answer with agreement levels, conflict identification (resolved vs unresolved), and per-expert contribution summaries
+- **Cross-Expert Revision Tracking**: When one expert revises their position based on another's input, it's visually highlighted — the structural engineer admits the fire safety expert found a blind spot
+- **Combined Citations**: The consensus merges citations from all experts' knowledge bases, giving the most comprehensive source coverage possible
+- **API + SDK Support**: `POST /api/v1/collaborate` for external agents, `lexic.collaborate()` in the SDK — same auth model as single-expert queries
+
 ---
 
 ## 5. Implementation TODOs (Hackathon)
@@ -144,10 +159,23 @@ Lexic is a **web platform + API**. It is NOT a CLI tool, not a library you impor
 - [x] `/api/marketplace/[slug]/download` route — download shared plugin as JSON
 - [ ] Error handling + loading states across all pages
 
+### Phase 6: Expert Collaboration Rooms
+- [x] Database schema — `collaboration_rooms` and `collaboration_sessions` tables with relations
+- [x] `lib/engine/collaboration.ts` — multi-expert deliberation engine (resolve experts, per-expert RAG+decision tree, multi-round debate, consensus synthesis)
+- [x] `POST /api/v1/collaborate` — external API endpoint (API key auth, JSON + SSE streaming)
+- [x] `/api/collaboration-rooms` — dashboard CRUD (list, create rooms)
+- [x] `/api/collaboration-rooms/[id]` — room detail + delete
+- [x] `/api/collaboration-rooms/sandbox` — Clerk-auth streaming sandbox endpoint
+- [x] SDK — `collaborate()` and `collaborateStream()` methods on `Lexic` client, new types (`CollaborateOptions`, `CollaborationResult`, `CollaborationStreamEvent`)
+- [x] Dashboard UI — Collaboration Rooms list page (`/collaboration`)
+- [x] Dashboard UI — Create Room page (`/collaboration/new`) — pick experts, mode, max rounds
+- [x] Dashboard UI — Room sandbox (`/collaboration/[id]`) — live streaming deliberation view with color-coded expert lanes, revision markers, consensus panel with conflicts + contributions
+- [x] Sidebar navigation — added "Collab Rooms" to dashboard nav
+- [x] Middleware — protected `/collaboration` and `/api/collaboration-rooms` routes
+
 ### Stretch Goals
 - [ ] Visual drag-and-drop decision tree editor
 - [ ] Plugin ratings and reviews
-- [ ] Multi-plugin stacking with conflict resolution
 - [ ] Confidence scoring display in UI
 - [ ] Royalty/monetization system for plugin creators
 - [ ] Supabase Storage integration for file uploads (scaffolding removed — currently using text paste + inline upload)
@@ -189,7 +217,40 @@ const tool = new LexicTool({ apiKey, plugin: "structural-eng-v1" })
 → Add to agent's tool list → agent autonomously calls expert when relevant
 ```
 
-### Flow 3: End User Gets Expert Answers
+### Flow 3: Multi-Expert Collaboration
+```
+Dashboard → "Collab Rooms" → "New Room" → Name it ("Building Safety Review Panel")
+→ Pick 3 plugins: Structural Engineering, Fire Safety, Building Code Compliance
+→ Choose mode: Debate (3 rounds)
+→ Ask: "Is a 6m cantilever RC beam safe for a commercial rooftop deck?"
+→ Watch Round 1: Each expert answers from their knowledge base with citations
+→ Watch Round 2: Structural Engineer revises (Building Code expert caught wrong load assumption)
+   Fire Safety expert flags prestressed concrete needs different fire cover
+→ Consensus synthesized: NOT safe as specified — recommends alternatives, full citations
+→ Confidence: HIGH (3/3 experts aligned after revision)
+```
+
+**Via API:**
+```
+POST /api/v1/collaborate
+{ experts: ["structural-eng", "fire-safety", "building-codes"], query: "...", mode: "debate" }
+→ SSE stream: expert_thinking → expert_response → round_complete → ... → consensus
+```
+
+**Via SDK:**
+```
+const result = await lexic.collaborate({
+  experts: ["structural-eng", "fire-safety", "building-codes"],
+  query: "Is a 6m cantilever RC beam safe for a commercial rooftop deck?",
+  mode: "debate",
+  maxRounds: 3,
+});
+console.log(result.consensus.answer);  // Synthesized answer
+console.log(result.consensus.conflicts); // Where experts disagreed
+console.log(result.rounds); // Full deliberation transcript
+```
+
+### Flow 4: End User Gets Expert Answers
 ```
 Opens their company's AI assistant → Asks "What's the minimum cover for a beam
 exposed to weather per IS 456?"
@@ -220,6 +281,8 @@ exposed to weather per IS 456?"
 | Fine-tuning | Expensive, not hot-swappable, no citations | We're runtime-injectable, version-controlled, source-linked |
 | Custom GPTs (OpenAI) | Locked to OpenAI, no structured reasoning, weak citations | Framework-agnostic, decision tree logic, mandatory citations |
 | LangChain Tools | Low-level, no marketplace, no domain packaging | We package the full expert: knowledge + reasoning + citations |
+| CrewAI / AutoGen multi-agent | LLMs role-playing experts with no knowledge base backing | Our experts are **grounded** in real documents with citation enforcement — they catch each other's mistakes with evidence, not hallucinations |
+| Single-expert RAG | One knowledge base, one perspective, blind to cross-domain gaps | Collaboration Rooms surface blind spots by having multiple grounded experts debate — the structural engineer catches the fire safety expert's oversight and vice versa |
 
 ---
 

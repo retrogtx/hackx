@@ -72,20 +72,38 @@ Schema defined in `lib/db/schema.ts` (Drizzle). Key tables:
 - `decision_trees` — JSON decision graphs per plugin
 - `api_keys` — hashed + encrypted keys for external agent access
 - `query_logs` — full audit trail with citations and decision paths
+- `collaboration_rooms` — multi-expert room definitions (expert slugs, mode, max rounds)
+- `collaboration_sessions` — individual deliberation sessions (rounds, consensus, status)
 
 DB client lives in `lib/db/index.ts`. pgvector similarity search uses Drizzle's `cosineDistance` + `sql` template tag.
+
+### Collaboration Engine (Multi-Expert Adversarial Reasoning)
+
+When multiple experts are needed:
+
+1. **Resolve experts** — load all plugin slugs, retrieve sources + decision trees for each
+2. **Multi-round deliberation** — each expert generates a response with their own RAG + decision tree pipeline
+3. **Cross-expert context** — in rounds 2+, each expert sees all prior responses and can revise
+4. **Consensus synthesis** — an AI moderator synthesizes final answer with agreement level, conflicts, per-expert contributions
+5. **Session persistence** — rounds, consensus, and metadata stored in `collaboration_sessions`
+
+Three modes: **debate** (multi-round adversarial), **consensus** (single round + synthesis), **review** (one leads, others critique).
 
 ### Two Auth Modes
 
 1. **Web app routes** — Clerk JWT sessions (middleware-enforced)
-2. **`/api/v1/query`** — API key auth (Bearer token, looked up in `api_keys` table) for external agent integrations
+2. **`/api/v1/query`** and **`/api/v1/collaborate`** — API key auth (Bearer token) for external agent integrations
 
 ### API Routes
 
 | Route | Auth | Purpose |
 |---|---|---|
 | `POST /api/v1/query` | API key | Main query endpoint (JSON + SSE streaming) |
+| `POST /api/v1/collaborate` | API key | Multi-expert collaboration (JSON + SSE streaming) |
 | `POST /api/sandbox/[pluginId]` | Clerk | Sandbox testing (SSE streaming) |
+| `GET/POST /api/collaboration-rooms` | Clerk | List / create collaboration rooms |
+| `GET/DELETE /api/collaboration-rooms/[id]` | Clerk | Room detail / delete |
+| `POST /api/collaboration-rooms/sandbox` | Clerk | Collaboration sandbox (SSE streaming) |
 | `GET/POST /api/plugins` | Clerk | List / create plugins |
 | `GET/PATCH/DELETE /api/plugins/[id]` | Clerk | Plugin CRUD |
 | `GET /api/plugins/[id]/export` | Clerk | Export plugin as JSON |
@@ -97,10 +115,10 @@ DB client lives in `lib/db/index.ts`. pgvector similarity search uses Drizzle's 
 ### SDK (`packages/sdk/`)
 
 TypeScript package (`lexic-sdk`) with framework adapters:
-- `index.ts` — core `Lexic` client with `query()`, `queryStream()`, `queryStreamToResult()`, and `setActivePlugin()` for hot-swap. Supports conversation `context`, per-request `options` (citationMode, maxSources, includeDecisionPath). All responses are normalized with safe defaults for missing fields.
+- `index.ts` — core `Lexic` client with `query()`, `queryStream()`, `queryStreamToResult()`, `setActivePlugin()` for hot-swap, and `collaborate()` / `collaborateStream()` for multi-expert collaboration rooms. Supports conversation `context`, per-request `options` (citationMode, maxSources, includeDecisionPath). All responses are normalized with safe defaults for missing fields.
 - `langchain.ts` — `LexicTool` adapter for LangChain agents (returns JSON with full citation metadata)
 - `autogpt.ts` — `LexicAutoGPT` adapter (returns human-readable text with citations and decision path)
-- `types.ts` — shared types: `QueryResult`, `Citation`, `DecisionStep`, `StreamEvent`, `QueryRequestOptions`
+- `types.ts` — shared types: `QueryResult`, `Citation`, `DecisionStep`, `StreamEvent`, `QueryRequestOptions`, `CollaborateOptions`, `CollaborationResult`, `CollaborationStreamEvent`, `ConsensusResult`, `ConflictEntry`
 - `__tests__/sdk.test.ts` — 69 unit tests covering normalization, adapters, error handling
 
 ## Key Patterns

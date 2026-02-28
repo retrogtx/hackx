@@ -135,6 +135,66 @@ export const apiKeys = pgTable("api_keys", {
   index("ak_user_idx").on(table.userId),
 ]);
 
+// ─── Collaboration Rooms ─────────────────────────────────────────────
+
+export const collaborationRooms = pgTable("collaboration_rooms", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  creatorId: uuid("creator_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  mode: text("mode").notNull().default("debate").$type<"debate" | "consensus" | "review">(),
+  expertSlugs: jsonb("expert_slugs").notNull().$type<string[]>(),
+  maxRounds: integer("max_rounds").default(3).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("cr_creator_idx").on(table.creatorId),
+]);
+
+export interface ExpertResponse {
+  pluginSlug: string;
+  pluginName: string;
+  domain: string;
+  answer: string;
+  citations: CitationEntry[];
+  confidence: "high" | "medium" | "low";
+  revised?: boolean;
+  revisionNote?: string;
+}
+
+export interface CollaborationRoundData {
+  roundNumber: number;
+  responses: ExpertResponse[];
+}
+
+export interface ConflictEntry {
+  topic: string;
+  positions: Array<{ expert: string; stance: string }>;
+  resolved: boolean;
+  resolution?: string;
+}
+
+export interface ConsensusData {
+  answer: string;
+  confidence: "high" | "medium" | "low";
+  agreementLevel: number;
+  citations: CitationEntry[];
+  conflicts: ConflictEntry[];
+  expertContributions: Array<{ expert: string; domain: string; keyPoints: string[] }>;
+}
+
+export const collaborationSessions = pgTable("collaboration_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roomId: uuid("room_id").references(() => collaborationRooms.id, { onDelete: "cascade" }).notNull(),
+  queryText: text("query_text").notNull(),
+  rounds: jsonb("rounds").default([]).$type<CollaborationRoundData[]>(),
+  consensus: jsonb("consensus").$type<ConsensusData>(),
+  status: text("status").notNull().default("pending").$type<"pending" | "deliberating" | "complete" | "error">(),
+  latencyMs: integer("latency_ms"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("cs_room_idx").on(table.roomId),
+]);
+
 // ─── Query Audit Log ────────────────────────────────────────────────
 
 export interface CitationEntry {
@@ -179,6 +239,7 @@ export const queryLogs = pgTable("query_logs", {
 export const usersRelations = relations(users, ({ many }) => ({
   plugins: many(plugins),
   apiKeys: many(apiKeys),
+  collaborationRooms: many(collaborationRooms),
 }));
 
 export const pluginsRelations = relations(plugins, ({ one, many }) => ({
@@ -210,4 +271,13 @@ export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
 export const queryLogsRelations = relations(queryLogs, ({ one }) => ({
   plugin: one(plugins, { fields: [queryLogs.pluginId], references: [plugins.id] }),
   apiKey: one(apiKeys, { fields: [queryLogs.apiKeyId], references: [apiKeys.id] }),
+}));
+
+export const collaborationRoomsRelations = relations(collaborationRooms, ({ one, many }) => ({
+  creator: one(users, { fields: [collaborationRooms.creatorId], references: [users.id] }),
+  sessions: many(collaborationSessions),
+}));
+
+export const collaborationSessionsRelations = relations(collaborationSessions, ({ one }) => ({
+  room: one(collaborationRooms, { fields: [collaborationSessions.roomId], references: [collaborationRooms.id] }),
 }));

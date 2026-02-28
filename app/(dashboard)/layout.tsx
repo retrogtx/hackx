@@ -1,10 +1,11 @@
 import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { Blocks, Key, FlaskConical, Store } from "lucide-react";
+import { Blocks, Key, FlaskConical, Store, Users } from "lucide-react";
 
 const navItems = [
   { href: "/plugins", label: "Plugins", icon: Blocks },
+  { href: "/collaboration", label: "Collab Rooms", icon: Users },
   { href: "/marketplace", label: "Marketplace", icon: Store },
   { href: "/api-keys", label: "API Keys", icon: Key },
 ];
