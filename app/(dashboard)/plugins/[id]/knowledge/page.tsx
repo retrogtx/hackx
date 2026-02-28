@@ -37,10 +37,11 @@ export default function KnowledgeBasePage() {
 
   async function handleFileUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const formEl = e.currentTarget;
     setUploading(true);
     setError("");
 
-    const form = new FormData(e.currentTarget);
+    const form = new FormData(formEl);
     try {
       const res = await fetch(`/api/plugins/${pluginId}/documents`, {
         method: "POST",
@@ -51,7 +52,7 @@ export default function KnowledgeBasePage() {
         throw new Error(err.error);
       }
       await loadDocs();
-      e.currentTarget.reset();
+      formEl.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -61,10 +62,11 @@ export default function KnowledgeBasePage() {
 
   async function handleTextUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const formEl = e.currentTarget;
     setUploading(true);
     setError("");
 
-    const formData = new FormData(e.currentTarget);
+    const formData = new FormData(formEl);
     try {
       const res = await fetch(`/api/plugins/${pluginId}/documents`, {
         method: "POST",
@@ -75,7 +77,7 @@ export default function KnowledgeBasePage() {
         throw new Error(err.error);
       }
       await loadDocs();
-      e.currentTarget.reset();
+      formEl.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
