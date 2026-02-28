@@ -143,6 +143,12 @@ export interface CitationEntry {
   page?: number;
   section?: string;
   excerpt: string;
+  documentId?: string;
+  chunkId?: string;
+  chunkIndex?: number;
+  sourceRank?: number;
+  similarity?: number;
+  fileType?: string;
 }
 
 export interface DecisionStep {

@@ -3,7 +3,7 @@ import { openai } from "@ai-sdk/openai";
 import { db } from "@/lib/db";
 import { plugins, decisionTrees, queryLogs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { retrieveSources, type RetrievedChunk } from "./retrieval";
+import { retrieveSources } from "./retrieval";
 import { executeDecisionTree, type DecisionResult } from "./decision-tree";
 import { processCitations } from "./citation";
 import { applyHallucinationGuard } from "./hallucination-guard";
@@ -20,6 +20,33 @@ CRITICAL RULES:
    state what you cannot verify.
 `;
 
+const RETRIEVAL_THRESHOLD = 0.4;
+
+export interface SourceCard {
+  id: string;
+  rank: number;
+  citationRef: string;
+  document: string;
+  fileType: string;
+  page?: number;
+  section?: string;
+  excerpt: string;
+  similarity: number;
+  cited: boolean;
+}
+
+export interface TrustInfo {
+  sourceOfTruth: "plugin_knowledge_base";
+  retrievalThreshold: number;
+  retrievedSourceCount: number;
+  citedSourceCount: number;
+  sourceCoverage: number;
+  unresolvedCitationRefs: number[];
+  trustedSourceCount: number;
+  trustLevel: "high" | "medium" | "low";
+  notes: string[];
+}
+
 export interface QueryResult {
   answer: string;
   citations: Array<{
@@ -29,6 +56,8 @@ export interface QueryResult {
     section?: string;
     excerpt: string;
   }>;
+  sources: SourceCard[];
+  trust: TrustInfo;
   decisionPath: Array<{
     step: number;
     node: string;
@@ -40,11 +69,16 @@ export interface QueryResult {
   pluginVersion: string;
 }
 
+interface QueryPipelineOptions {
+  skipPublishCheck?: boolean;
+  skipAuditLog?: boolean;
+}
+
 export async function runQueryPipeline(
   pluginSlug: string,
   query: string,
   apiKeyId?: string,
-  options?: { skipPublishCheck?: boolean },
+  options?: QueryPipelineOptions,
 ): Promise<QueryResult> {
   const start = Date.now();
 
@@ -58,7 +92,7 @@ export async function runQueryPipeline(
   }
 
   // 2. Retrieve sources
-  const sources = await retrieveSources(query, plugin.id);
+  const sources = await retrieveSources(query, plugin.id, 8, RETRIEVAL_THRESHOLD);
   console.log(`[QueryPipeline] Plugin: ${pluginSlug}, Query: "${query.slice(0, 80)}", Sources found: ${sources.length}${sources.length > 0 ? `, top similarity: ${sources[0].similarity.toFixed(3)}` : ""}`);
 
   // 3. Decision tree evaluation
@@ -105,6 +139,61 @@ Respond using the source documents above. Cite every claim with [Source N].`;
   // 7. Hallucination guard
   const guardedResult = applyHallucinationGuard(citationResult);
 
+  const citedIndices = new Set(citationResult.usedSourceIndices);
+  const sourcesPanel: SourceCard[] = sources.map((source, i) => ({
+    id: `source_${i + 1}`,
+    rank: i + 1,
+    citationRef: `Source ${i + 1}`,
+    document: source.documentName,
+    fileType: source.fileType,
+    page: source.pageNumber ?? undefined,
+    section: source.sectionTitle ?? undefined,
+    excerpt: source.content.slice(0, 220) + (source.content.length > 220 ? "..." : ""),
+    similarity: Number(source.similarity.toFixed(3)),
+    cited: citedIndices.has(i),
+  }));
+
+  const sourceCoverage = sources.length > 0
+    ? Number((citationResult.usedSourceIndices.length / sources.length).toFixed(2))
+    : 0;
+  const trustedSourceCount = sources.filter((s) => s.similarity >= 0.6).length;
+  const trustNotes: string[] = [];
+  if (sources.length === 0) {
+    trustNotes.push("No supporting chunks were retrieved from the plugin knowledge base.");
+  } else {
+    trustNotes.push(
+      `Sources are retrieved only from this plugin's uploaded knowledge base (threshold >= ${RETRIEVAL_THRESHOLD}).`,
+    );
+  }
+  if (citationResult.unresolvedRefs.length > 0) {
+    trustNotes.push(
+      `The answer referenced unresolved citations: ${citationResult.unresolvedRefs.map((n) => `[Source ${n}]`).join(", ")}.`,
+    );
+  }
+  if (citationResult.usedSourceIndices.length === 0 && sources.length > 0) {
+    trustNotes.push("No retrieved source was explicitly cited in the final answer.");
+  }
+  if (citationResult.totalRefs > 0 && citationResult.unresolvedRefs.length === 0) {
+    trustNotes.push("All citation tags in the answer were resolved to retrieved source chunks.");
+  }
+
+  const trust: TrustInfo = {
+    sourceOfTruth: "plugin_knowledge_base",
+    retrievalThreshold: RETRIEVAL_THRESHOLD,
+    retrievedSourceCount: sources.length,
+    citedSourceCount: citationResult.usedSourceIndices.length,
+    sourceCoverage,
+    unresolvedCitationRefs: citationResult.unresolvedRefs,
+    trustedSourceCount,
+    trustLevel: computeTrustLevel({
+      unresolvedCount: citationResult.unresolvedRefs.length,
+      retrievedCount: sources.length,
+      citedCount: citationResult.usedSourceIndices.length,
+      trustedSourceCount,
+    }),
+    notes: trustNotes,
+  };
+
   // 8. Build decision path for response
   const decisionPath = decisionResult
     ? decisionResult.path.map((s, i) => ({
@@ -118,20 +207,24 @@ Respond using the source documents above. Cite every claim with [Source N].`;
 
   // 9. Audit log
   const latencyMs = Date.now() - start;
-  await db.insert(queryLogs).values({
-    pluginId: plugin.id,
-    apiKeyId: apiKeyId || null,
-    queryText: query,
-    responseText: guardedResult.cleanedAnswer,
-    citations: guardedResult.citations,
-    decisionPath,
-    confidence: guardedResult.confidence,
-    latencyMs,
-  });
+  if (!options?.skipAuditLog) {
+    await db.insert(queryLogs).values({
+      pluginId: plugin.id,
+      apiKeyId: apiKeyId || null,
+      queryText: query,
+      responseText: guardedResult.cleanedAnswer,
+      citations: guardedResult.citations,
+      decisionPath,
+      confidence: guardedResult.confidence,
+      latencyMs,
+    });
+  }
 
   return {
     answer: guardedResult.cleanedAnswer,
     citations: guardedResult.citations,
+    sources: sourcesPanel,
+    trust,
     decisionPath,
     confidence: guardedResult.confidence,
     pluginVersion: plugin.version,
@@ -141,7 +234,6 @@ Respond using the source documents above. Cite every claim with [Source N].`;
 function extractQueryParams(query: string): Record<string, string> {
   // Simple extraction — the LLM-backed version would be smarter
   const params: Record<string, string> = {};
-  const lowerQuery = query.toLowerCase();
 
   // Common engineering parameters
   const patterns: Record<string, RegExp> = {
@@ -160,4 +252,21 @@ function extractQueryParams(query: string): Record<string, string> {
   }
 
   return params;
+}
+
+function computeTrustLevel({
+  unresolvedCount,
+  retrievedCount,
+  citedCount,
+  trustedSourceCount,
+}: {
+  unresolvedCount: number;
+  retrievedCount: number;
+  citedCount: number;
+  trustedSourceCount: number;
+}): "high" | "medium" | "low" {
+  if (unresolvedCount > 0) return "low";
+  if (retrievedCount === 0 || citedCount === 0) return "low";
+  if (citedCount >= 2 && trustedSourceCount > 0) return "high";
+  return "medium";
 }

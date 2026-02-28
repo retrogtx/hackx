@@ -9,6 +9,9 @@ export function applyHallucinationGuard(result: CitationResult): CitationResult 
       cleanedAnswer: REFUSAL_MESSAGE,
       citations: [],
       confidence: "low",
+      usedSourceIndices: [],
+      unresolvedRefs: result.unresolvedRefs,
+      totalRefs: result.totalRefs,
     };
   }
   return result;

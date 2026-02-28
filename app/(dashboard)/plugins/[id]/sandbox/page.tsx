@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Send, Loader2, Bot, User } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Bot, User, ShieldCheck } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -25,6 +25,29 @@ interface Message {
     value?: string;
     result?: string;
   }>;
+  sources?: Array<{
+    id: string;
+    rank: number;
+    citationRef: string;
+    document: string;
+    fileType: string;
+    page?: number;
+    section?: string;
+    excerpt: string;
+    similarity: number;
+    cited: boolean;
+  }>;
+  trust?: {
+    sourceOfTruth: "plugin_knowledge_base";
+    retrievalThreshold: number;
+    retrievedSourceCount: number;
+    citedSourceCount: number;
+    sourceCoverage: number;
+    unresolvedCitationRefs: number[];
+    trustedSourceCount: number;
+    trustLevel: "high" | "medium" | "low";
+    notes: string[];
+  };
 }
 
 interface PluginInfo {
@@ -87,6 +110,8 @@ export default function SandboxPage() {
             citations: data.citations,
             confidence: data.confidence,
             decisionPath: data.decisionPath,
+            sources: data.sources,
+            trust: data.trust,
           },
         ]);
       }
@@ -165,6 +190,80 @@ export default function SandboxPage() {
                       >
                         Confidence: {msg.confidence}
                       </Badge>
+                    )}
+
+                    {msg.trust && (
+                      <div className="mt-3 space-y-2 rounded-md border border-[#262626] bg-[#0a0a0a] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="h-3.5 w-3.5 text-[#00d4aa]" />
+                            <p className="text-xs font-semibold text-[#ededed]">Trust Panel</p>
+                          </div>
+                          <Badge
+                            className={`text-[10px] ${
+                              msg.trust.trustLevel === "high"
+                                ? "bg-[#00d4aa]/10 text-[#00d4aa] border-[#00d4aa]/20"
+                                : msg.trust.trustLevel === "medium"
+                                  ? "bg-[#f59e0b]/10 text-[#f59e0b] border-[#f59e0b]/20"
+                                  : "bg-[#ff4444]/10 text-[#ff4444] border-[#ff4444]/20"
+                            }`}
+                          >
+                            {msg.trust.trustLevel.toUpperCase()} TRUST
+                          </Badge>
+                        </div>
+                        <div className="grid gap-2 text-xs text-[#888] sm:grid-cols-3">
+                          <div>Retrieved: <span className="text-[#ededed]">{msg.trust.retrievedSourceCount}</span></div>
+                          <div>Cited: <span className="text-[#ededed]">{msg.trust.citedSourceCount}</span></div>
+                          <div>Coverage: <span className="text-[#ededed]">{Math.round(msg.trust.sourceCoverage * 100)}%</span></div>
+                        </div>
+                        <div className="space-y-1">
+                          {msg.trust.notes.map((note, noteIdx) => (
+                            <p key={noteIdx} className="text-xs text-[#777]">{note}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-3 space-y-2 border-t border-[#262626] pt-2">
+                        <p className="text-xs font-semibold text-[#666]">Source Evidence</p>
+                        <div className="space-y-2">
+                          {msg.sources.map((source) => (
+                            <div
+                              key={source.id}
+                              className="rounded-lg border border-[#262626] bg-[#1a1a1a] p-2.5 text-xs"
+                            >
+                              <div className="mb-1 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  <Badge className="border-[#333] bg-[#111] text-[#aaa]">
+                                    {source.citationRef}
+                                  </Badge>
+                                  <span className="font-semibold text-[#ededed]">{source.document}</span>
+                                  <span className="text-[#666]">({source.fileType})</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <Badge className="border-[#333] bg-[#111] text-[#999]">
+                                    sim {Math.round(source.similarity * 100)}%
+                                  </Badge>
+                                  {source.cited && (
+                                    <Badge className="border-[#00d4aa]/20 bg-[#00d4aa]/10 text-[#00d4aa]">
+                                      used
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              {(source.section || source.page) && (
+                                <p className="mb-1 text-[#777]">
+                                  {source.section ? `Section: ${source.section}` : ""}
+                                  {source.section && source.page ? " • " : ""}
+                                  {source.page ? `Page: ${source.page}` : ""}
+                                </p>
+                              )}
+                              <p className="text-[#888]">{source.excerpt}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
 
                     {msg.citations && msg.citations.length > 0 && (

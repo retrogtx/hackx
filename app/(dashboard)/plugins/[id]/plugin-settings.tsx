@@ -59,11 +59,11 @@ export function PluginSettings({
     if (res.ok) {
       const keys: ApiKeyInfo[] = await res.json();
       setApiKeys(keys);
-      if (keys.length > 0 && !selectedKeyId) {
-        setSelectedKeyId(keys[0].id);
+      if (keys.length > 0) {
+        setSelectedKeyId((prev) => prev || keys[0].id);
       }
     }
-  }, []); 
+  }, []);
 
   useEffect(() => {
     loadKeys();
