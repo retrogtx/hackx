@@ -1,33 +1,49 @@
+export type ChunkMetadata = {
+  fileName?: string;
+  fileType?: string;
+  charCount: number;
+};
+
 export interface Chunk {
   content: string;
   chunkIndex: number;
   pageNumber?: number;
   sectionTitle?: string;
+  metadata: ChunkMetadata;
 }
 
-const CHUNK_SIZE = 1500; // characters (~375 tokens)
+const CHUNK_SIZE = 1500; 
 const OVERLAP = 200;
 
-export function chunkText(text: string, metadata?: { fileName?: string }): Chunk[] {
+export function chunkText(
+  text: string,
+  opts?: { fileName?: string; fileType?: string },
+): Chunk[] {
   const chunks: Chunk[] = [];
 
-  // Split by double newlines first (paragraphs/sections)
   const sections = text.split(/\n{2,}/);
   let buffer = "";
   let chunkIndex = 0;
+
+  const buildMetadata = (content: string): ChunkMetadata => ({
+    fileName: opts?.fileName,
+    fileType: opts?.fileType,
+    charCount: content.length,
+  });
 
   for (const section of sections) {
     const trimmed = section.trim();
     if (!trimmed) continue;
 
     if (buffer.length + trimmed.length > CHUNK_SIZE && buffer.length > 0) {
+      const content = buffer.trim();
       chunks.push({
-        content: buffer.trim(),
+        content,
         chunkIndex: chunkIndex++,
         sectionTitle: extractSectionTitle(buffer),
+        metadata: buildMetadata(content),
       });
 
-      // Keep overlap from end of previous chunk
       const overlapText = buffer.slice(-OVERLAP);
       buffer = overlapText + "\n\n" + trimmed;
     } else {
@@ -35,20 +51,22 @@ export function chunkText(text: string, metadata?: { fileName?: string }): Chunk
     }
   }
 
-  // Don't forget the last buffer
   if (buffer.trim()) {
+    const content = buffer.trim();
     chunks.push({
-      content: buffer.trim(),
+      content,
       chunkIndex: chunkIndex++,
       sectionTitle: extractSectionTitle(buffer),
+      metadata: buildMetadata(content),
     });
   }
 
-  // If the text is very short, just return it as one chunk
   if (chunks.length === 0 && text.trim()) {
+    const content = text.trim();
     chunks.push({
-      content: text.trim(),
+      content,
       chunkIndex: 0,
+      metadata: buildMetadata(content),
     });
   }
 

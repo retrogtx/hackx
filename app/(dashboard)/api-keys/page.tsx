@@ -22,10 +22,12 @@ export default function ApiKeysPage() {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const loadKeys = useCallback(async () => {
     const res = await fetch("/api/api-keys");
     if (res.ok) setKeys(await res.json());
+    setInitialLoading(false);
   }, []);
 
   useEffect(() => {
@@ -139,7 +141,11 @@ export default function ApiKeysPage() {
         </Card>
       )}
 
-      {keys.length === 0 && !creating ? (
+      {initialLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-foreground" />
+        </div>
+      ) : keys.length === 0 && !creating ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center py-12">
             <Key className="mb-3 h-10 w-10 text-muted-foreground/50" />

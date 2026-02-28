@@ -86,7 +86,7 @@ export async function POST(
       .returning();
 
     // 2. Chunk the text
-    const chunks = chunkText(rawText, { fileName });
+    const chunks = chunkText(rawText, { fileName, fileType });
 
     // 3. Embed all chunks
     const chunkTexts = chunks.map((c) => c.content);
@@ -103,6 +103,7 @@ export async function POST(
           pageNumber: chunk.pageNumber ?? null,
           sectionTitle: chunk.sectionTitle ?? null,
           embedding: embeddings[i],
+          metadata: chunk.metadata,
         })),
       );
     }
