@@ -32,17 +32,28 @@ type PluginListItem = {
   config: Record<string, unknown> | null;
 };
 
-type VisibilityFilter = "all" | "public" | "private";
+type VisibilityFilter = "all" | "public" | "private" | "downloaded";
 
 function isMarketplaceShared(config: Record<string, unknown> | null): boolean {
   if (!config) return false;
   return config.marketplaceShared === true;
 }
 
-export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem[] }) {
+function isDownloadedPlugin(config: Record<string, unknown> | null): boolean {
+  if (!config) return false;
+  return config.downloadedFromMarketplace === true;
+}
+
+export function PluginsGrid({
+  initialPlugins,
+  initialFilter = "all",
+}: {
+  initialPlugins: PluginListItem[];
+  initialFilter?: VisibilityFilter;
+}) {
   const router = useRouter();
   const [plugins, setPlugins] = useState(initialPlugins);
-  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
+  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>(initialFilter);
   const [busyPluginId, setBusyPluginId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -50,13 +61,30 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
     () => plugins.filter((plugin) => isMarketplaceShared(plugin.config)).length,
     [plugins],
   );
-  const privateCount = useMemo(() => plugins.length - sharedCount, [plugins, sharedCount]);
+  const downloadedCount = useMemo(
+    () => plugins.filter((plugin) => isDownloadedPlugin(plugin.config)).length,
+    [plugins],
+  );
+  const privateCount = useMemo(
+    () =>
+      plugins.filter(
+        (plugin) =>
+          !isMarketplaceShared(plugin.config) && !isDownloadedPlugin(plugin.config),
+      ).length,
+    [plugins],
+  );
   const filteredPlugins = useMemo(() => {
     if (visibilityFilter === "public") {
       return plugins.filter((plugin) => isMarketplaceShared(plugin.config));
     }
+    if (visibilityFilter === "downloaded") {
+      return plugins.filter((plugin) => isDownloadedPlugin(plugin.config));
+    }
     if (visibilityFilter === "private") {
-      return plugins.filter((plugin) => !isMarketplaceShared(plugin.config));
+      return plugins.filter(
+        (plugin) =>
+          !isMarketplaceShared(plugin.config) && !isDownloadedPlugin(plugin.config),
+      );
     }
     return plugins;
   }, [plugins, visibilityFilter]);
@@ -201,6 +229,17 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
           >
             Private ({privateCount})
           </button>
+          <button
+            type="button"
+            onClick={() => setVisibilityFilter("downloaded")}
+            className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+              visibilityFilter === "downloaded"
+                ? "border-[#22c55e]/40 bg-[#22c55e]/10 text-[#22c55e]"
+                : "border-[#333] text-[#a1a1a1] hover:bg-[#1a1a1a] hover:text-white"
+            }`}
+          >
+            Downloaded ({downloadedCount})
+          </button>
         </div>
       ) : null}
 
@@ -210,24 +249,35 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
         </div>
       ) : filteredPlugins.length === 0 ? (
         <div className="rounded-md border border-dashed border-[#333] px-4 py-10 text-center text-sm text-[#a1a1a1]">
-          No {visibilityFilter === "public" ? "public" : "private"} plugins found.
+          No {visibilityFilter} plugins found.
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {filteredPlugins.map((plugin) => {
             const marketplaceShared = isMarketplaceShared(plugin.config);
+            const downloadedPlugin = isDownloadedPlugin(plugin.config);
             const isBusy = busyPluginId === plugin.id;
 
             return (
               <div
                 key={plugin.id}
                 className="group rounded-md border border-[#262626] bg-[#0a0a0a] p-5 transition-all hover:border-[#333] hover:bg-[#111111]"
+                role="link"
+                tabIndex={0}
+                onClick={() => router.push(`/plugins/${plugin.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    router.push(`/plugins/${plugin.id}`);
+                  }
+                }}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <Link
                       href={`/plugins/${plugin.id}`}
                       className="font-bold text-white transition-colors hover:text-[#00d4aa]"
+                      onClick={(e) => e.stopPropagation()}
                     >
                       {plugin.name}
                     </Link>
@@ -248,12 +298,19 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
                         Marketplace
                       </Badge>
                     ) : null}
+                    {downloadedPlugin ? (
+                      <Badge className="bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/20">
+                        Downloaded
+                      </Badge>
+                    ) : null}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
                           className="rounded-md border border-[#333] p-1.5 text-[#a1a1a1] transition-colors hover:bg-[#1a1a1a] hover:text-white disabled:opacity-40"
                           disabled={isBusy}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
                         >
                           {isBusy ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -265,23 +322,37 @@ export function PluginsGrid({ initialPlugins }: { initialPlugins: PluginListItem
                       <DropdownMenuContent
                         align="end"
                         className="border-[#262626] bg-[#111111] text-[#ededed]"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <DropdownMenuItem asChild>
-                          <Link href={`/plugins/${plugin.id}`} className="cursor-pointer">
+                          <Link
+                            href={`/plugins/${plugin.id}`}
+                            className="cursor-pointer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <ExternalLink className="h-4 w-4" />
                             Open
                           </Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => toggleMarketplace(plugin.id, !marketplaceShared)}
-                          className="cursor-pointer"
-                          disabled={isBusy}
-                        >
-                          <Store className="h-4 w-4" />
-                          {marketplaceShared
-                            ? "Remove from marketplace"
-                            : "Share to marketplace"}
-                        </DropdownMenuItem>
+                        {marketplaceShared ? (
+                          <DropdownMenuItem
+                            onClick={() => toggleMarketplace(plugin.id, false)}
+                            className="cursor-pointer"
+                            disabled={isBusy}
+                          >
+                            <Store className="h-4 w-4" />
+                            Remove from marketplace
+                          </DropdownMenuItem>
+                        ) : !downloadedPlugin ? (
+                          <DropdownMenuItem
+                            onClick={() => toggleMarketplace(plugin.id, true)}
+                            className="cursor-pointer"
+                            disabled={isBusy}
+                          >
+                            <Store className="h-4 w-4" />
+                            Add to marketplace
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           onClick={() => downloadPlugin(plugin.id, plugin.slug)}
                           className="cursor-pointer"

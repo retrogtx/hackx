@@ -42,7 +42,6 @@ export default async function PluginDetailPage({
     .select({ count: count() })
     .from(queryLogs)
     .where(eq(queryLogs.pluginId, id));
-
   const marketplaceShared = isMarketplaceShared(plugin.config ?? null);
 
   return (

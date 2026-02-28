@@ -8,10 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Plus, Blocks, Search } from "lucide-react";
 import { PluginsGrid } from "./plugins-grid";
 
+type PluginFilter = "all" | "public" | "private" | "downloaded";
+
 export default async function PluginsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string | string[] }>;
+  searchParams: Promise<{ q?: string | string[]; filter?: string | string[] }>;
 }) {
   const user = await requireUser();
 
@@ -34,6 +36,15 @@ export default async function PluginsPage({
   const rawQuery = Array.isArray(resolvedSearchParams.q)
     ? resolvedSearchParams.q[0] ?? ""
     : resolvedSearchParams.q ?? "";
+  const rawFilter = Array.isArray(resolvedSearchParams.filter)
+    ? resolvedSearchParams.filter[0] ?? ""
+    : resolvedSearchParams.filter ?? "";
+  const initialFilter: PluginFilter =
+    rawFilter === "public" ||
+    rawFilter === "private" ||
+    rawFilter === "downloaded"
+      ? rawFilter
+      : "all";
   const query = rawQuery.trim().toLowerCase();
   const filteredPluginCards = query
     ? pluginCards.filter((plugin) =>
@@ -78,6 +89,9 @@ export default async function PluginsPage({
       ) : (
         <>
           <form action="/plugins" method="GET" className="mb-6 flex gap-2">
+            {initialFilter !== "all" ? (
+              <input type="hidden" name="filter" value={initialFilter} />
+            ) : null}
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#666]" />
               <Input
@@ -98,7 +112,9 @@ export default async function PluginsPage({
                 variant="outline"
                 className="border-[#333] text-[#a1a1a1] hover:bg-[#1a1a1a] hover:text-white"
               >
-                <Link href="/plugins">Clear</Link>
+                <Link href={initialFilter === "all" ? "/plugins" : `/plugins?filter=${initialFilter}`}>
+                  Clear
+                </Link>
               </Button>
             ) : null}
           </form>
@@ -112,7 +128,7 @@ export default async function PluginsPage({
               </p>
             </div>
           ) : (
-            <PluginsGrid initialPlugins={filteredPluginCards} />
+            <PluginsGrid initialPlugins={filteredPluginCards} initialFilter={initialFilter} />
           )}
         </>
       )}
