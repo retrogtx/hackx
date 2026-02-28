@@ -11,6 +11,14 @@ async function verifyPluginOwnership(pluginId: string, userId: string) {
   return plugin;
 }
 
+function handleError(error: unknown) {
+  if (error instanceof Error && error.message === "Unauthorized") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const message = error instanceof Error ? error.message : "Internal server error";
+  return NextResponse.json({ error: message }, { status: 500 });
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; treeId: string }> },
@@ -36,8 +44,8 @@ export async function GET(
     }
 
     return NextResponse.json(tree);
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  } catch (error) {
+    return handleError(error);
   }
 }
 
@@ -78,8 +86,8 @@ export async function PUT(
       .returning();
 
     return NextResponse.json(updated);
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  } catch (error) {
+    return handleError(error);
   }
 }
 
@@ -108,7 +116,7 @@ export async function DELETE(
 
     await db.delete(decisionTrees).where(eq(decisionTrees.id, treeId));
     return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  } catch (error) {
+    return handleError(error);
   }
 }

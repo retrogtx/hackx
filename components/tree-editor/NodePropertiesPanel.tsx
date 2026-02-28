@@ -14,6 +14,7 @@ export function NodePropertiesPanel() {
   const updateNodeData = useTreeEditorStore((s) => s.updateNodeData);
   const deleteNode = useTreeEditorStore((s) => s.deleteNode);
   const setRootNode = useTreeEditorStore((s) => s.setRootNode);
+  const renameOption = useTreeEditorStore((s) => s.renameOption);
   const viewMode = useTreeEditorStore((s) => s.viewMode);
 
   if (!selectedNodeId) return null;
@@ -118,29 +119,44 @@ export function NodePropertiesPanel() {
                 {simple ? "Possible answers" : "Options"}
               </Label>
               <div className="space-y-2">
-                {(data.options || []).map((opt, idx) => (
-                  <div key={idx} className="flex gap-2">
-                    <Input
-                      value={opt}
-                      onChange={(e) => {
-                        const newOptions = [...(data.options || [])];
-                        newOptions[idx] = e.target.value;
-                        updateNodeData(selectedNodeId, { options: newOptions });
-                      }}
-                      className={inputClass + " flex-1"}
-                      placeholder={simple ? `Answer ${idx + 1}` : `Option ${idx + 1}`}
-                    />
-                    <button
-                      onClick={() => {
-                        const newOptions = (data.options || []).filter((_, i) => i !== idx);
-                        updateNodeData(selectedNodeId, { options: newOptions });
-                      }}
-                      className="text-[#666] hover:text-red-400"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                {(data.options || []).map((opt, idx) => {
+                  const isDuplicate = (data.options || []).indexOf(opt) !== idx && opt !== "";
+                  return (
+                    <div key={idx}>
+                      <div className="flex gap-2">
+                        <Input
+                          value={opt}
+                          onChange={(e) => {
+                            const oldOpt = (data.options || [])[idx];
+                            const newOptions = [...(data.options || [])];
+                            newOptions[idx] = e.target.value;
+                            updateNodeData(selectedNodeId, { options: newOptions });
+                            if (oldOpt && e.target.value && oldOpt !== e.target.value) {
+                              renameOption(selectedNodeId, oldOpt, e.target.value);
+                            }
+                          }}
+                          className={`${inputClass} flex-1 ${isDuplicate ? "!border-red-500/50" : ""}`}
+                          placeholder={simple ? `Answer ${idx + 1}` : `Option ${idx + 1}`}
+                        />
+                        <button
+                          onClick={() => {
+                            const newOptions = (data.options || []).filter((_, i) => i !== idx);
+                            updateNodeData(selectedNodeId, { options: newOptions });
+                          }}
+                          className="text-[#666] hover:text-red-400"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {isDuplicate && (
+                        <p className="text-[10px] text-red-400 mt-0.5">Duplicate answer</p>
+                      )}
+                      {opt === "" && (
+                        <p className="text-[10px] text-amber-400 mt-0.5">Empty — will be ignored on save</p>
+                      )}
+                    </div>
+                  );
+                })}
                 <Button
                   size="sm"
                   variant="outline"

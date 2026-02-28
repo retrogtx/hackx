@@ -65,7 +65,7 @@ export function decisionTreeToFlow(tree: DecisionTreeData): {
     }
   }
 
-  // Second pass: create nodes with centered positions
+  // Second pass: create reachable nodes with centered positions
   for (const [depth, nodeIds] of depthNodes) {
     const count = nodeIds.length;
     nodeIds.forEach((nodeId, idx) => {
@@ -117,6 +117,23 @@ export function decisionTreeToFlow(tree: DecisionTreeData): {
         }
       }
     });
+  }
+
+  // Third pass: include disconnected (unreachable) nodes so they aren't lost on save
+  const maxDepth = Math.max(...Array.from(depthNodes.keys()), 0);
+  let orphanIndex = 0;
+  for (const [nodeId, dn] of Object.entries(tree.nodes)) {
+    if (bfsVisited.has(nodeId)) continue;
+    nodes.push({
+      id: nodeId,
+      type: dn.type,
+      position: {
+        x: (orphanIndex - 1) * NODE_SPACING_X,
+        y: (maxDepth + 2) * NODE_SPACING_Y,
+      },
+      data: decisionNodeToFlowData(dn, false),
+    });
+    orphanIndex++;
   }
 
   return { nodes, edges };
@@ -178,19 +195,24 @@ export function flowToDecisionTree(
     };
 
     if (node.data.nodeType === "question") {
+      // Filter out blank and duplicate options
+      const cleanOptions = (node.data.options || [])
+        .map((o) => o.trim())
+        .filter((o, i, arr) => o !== "" && arr.indexOf(o) === i);
+
       dn.question = {
         text: node.data.questionText || "",
-        options: node.data.options || [],
+        options: cleanOptions,
         extractFrom: node.data.extractFrom || "",
       };
 
-      // Build childrenByAnswer from edges
+      // Build childrenByAnswer from edges — first edge per label wins
       const outEdges = edges.filter((e) => e.source === node.id);
       if (outEdges.length > 0) {
         dn.childrenByAnswer = {};
         for (const edge of outEdges) {
           const label = (edge.data as { label?: string })?.label || "";
-          if (label) {
+          if (label && !(label in dn.childrenByAnswer)) {
             dn.childrenByAnswer[label] = edge.target;
           }
         }

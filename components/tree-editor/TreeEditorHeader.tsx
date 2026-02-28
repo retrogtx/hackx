@@ -10,9 +10,10 @@ interface TreeEditorHeaderProps {
   pluginId: string;
   saving: boolean;
   onSave: () => void;
+  saveDisabled?: boolean;
 }
 
-export function TreeEditorHeader({ pluginId, saving, onSave }: TreeEditorHeaderProps) {
+export function TreeEditorHeader({ pluginId, saving, onSave, saveDisabled }: TreeEditorHeaderProps) {
   const treeName = useTreeEditorStore((s) => s.treeName);
   const treeDescription = useTreeEditorStore((s) => s.treeDescription);
   const isDirty = useTreeEditorStore((s) => s.isDirty);
@@ -88,7 +89,7 @@ export function TreeEditorHeader({ pluginId, saving, onSave }: TreeEditorHeaderP
         <Button
           size="sm"
           onClick={onSave}
-          disabled={!isDirty || saving}
+          disabled={!isDirty || saving || saveDisabled}
           className="bg-white text-black hover:bg-[#ccc] font-semibold disabled:opacity-40"
         >
           {saving ? (

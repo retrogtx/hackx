@@ -40,6 +40,7 @@ interface TreeEditorState {
   addNode: (type: "question" | "condition" | "action", position: { x: number; y: number }) => void;
   deleteNode: (id: string) => void;
   updateNodeData: (id: string, data: Partial<FlowNodeData>) => void;
+  renameOption: (nodeId: string, oldOption: string, newOption: string) => void;
   setRootNode: (id: string) => void;
   selectNode: (id: string | null) => void;
   setTreeMeta: (name: string, description: string) => void;
@@ -121,12 +122,18 @@ export const useTreeEditorStore = create<TreeEditorState>((set, get) => ({
       return;
     }
 
-    // Question nodes: label by answer
+    // Question nodes: label by answer, one target per sourceHandle
     if (sourceNode.data.nodeType === "question") {
       const handleId = connection.sourceHandle || "";
       const answerLabel = handleId.startsWith("answer-")
         ? handleId.replace("answer-", "")
         : `option-${edges.filter((e) => e.source === connection.source).length + 1}`;
+
+      // Block if this sourceHandle already has a connection
+      const handleTaken = edges.some(
+        (e) => e.source === connection.source && e.sourceHandle === connection.sourceHandle,
+      );
+      if (handleTaken) return;
 
       const newEdge: Edge = {
         id: `${connection.source}-${answerLabel}-${connection.target}`,
@@ -206,6 +213,23 @@ export const useTreeEditorStore = create<TreeEditorState>((set, get) => ({
       ),
       isDirty: true,
     });
+  },
+
+  renameOption: (nodeId, oldOption, newOption) => {
+    const { edges } = get();
+    // Re-key edges that reference the old option handle
+    const updatedEdges = edges.map((e) => {
+      if (e.source === nodeId && e.sourceHandle === `answer-${oldOption}`) {
+        return {
+          ...e,
+          id: `${nodeId}-${newOption}-${e.target}`,
+          sourceHandle: `answer-${newOption}`,
+          data: { ...e.data, label: newOption },
+        };
+      }
+      return e;
+    });
+    set({ edges: updatedEdges, isDirty: true });
   },
 
   setRootNode: (id) => {

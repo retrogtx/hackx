@@ -38,11 +38,17 @@ export function JsonEditor() {
     try {
       const treeData = JSON.parse(jsonText);
 
-      if (!treeData.rootNodeId && Object.keys(treeData.nodes || {}).length > 0) {
-        throw new Error("Missing rootNodeId");
-      }
       if (!treeData.nodes || typeof treeData.nodes !== "object") {
         throw new Error("Missing or invalid 'nodes' object");
+      }
+      const nodeKeys = Object.keys(treeData.nodes);
+      if (nodeKeys.length > 0 && !treeData.rootNodeId) {
+        throw new Error("Missing rootNodeId — set it to one of: " + nodeKeys.slice(0, 3).join(", "));
+      }
+      if (treeData.rootNodeId && !treeData.nodes[treeData.rootNodeId]) {
+        throw new Error(
+          `rootNodeId "${treeData.rootNodeId}" does not exist in nodes. Available: ${nodeKeys.slice(0, 5).join(", ")}`,
+        );
       }
 
       const { nodes: flowNodes, edges: flowEdges } = decisionTreeToFlow(treeData);

@@ -26,8 +26,12 @@ export default function TreeEditorPage() {
   const treeDescription = useTreeEditorStore((s) => s.treeDescription);
   const markClean = useTreeEditorStore((s) => s.markClean);
   const editorTab = useTreeEditorStore((s) => s.editorTab);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
+    // Reset store before loading to prevent stale data from a previous tree
+    loadTree([], [], "", "");
+
     async function fetchTree() {
       try {
         const res = await fetch(`/api/plugins/${pluginId}/trees/${treeId}`);
@@ -36,8 +40,11 @@ export default function TreeEditorPage() {
 
         const { nodes: flowNodes, edges: flowEdges } = decisionTreeToFlow(tree.treeData);
         loadTree(flowNodes, flowEdges, tree.name, tree.description || "");
+        setLoadFailed(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tree");
+        setLoadFailed(true);
+        loadTree([], [], "", "");
       } finally {
         setLoading(false);
       }
@@ -92,7 +99,7 @@ export default function TreeEditorPage() {
   return (
     <ReactFlowProvider>
       <div className="flex h-screen flex-col bg-[#0a0a0a]">
-        <TreeEditorHeader pluginId={pluginId} saving={saving} onSave={handleSave} />
+        <TreeEditorHeader pluginId={pluginId} saving={saving} onSave={handleSave} saveDisabled={loadFailed} />
         {error && (
           <div className="border-b border-red-500/30 bg-red-900/20 px-4 py-2 text-sm text-red-400">
             {error}
